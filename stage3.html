@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Form Tracker – Stage 3: Feedback + Log</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0a0a0a;
+      color: #fff;
+      font-family: system-ui, -apple-system, sans-serif;
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Status bar ── */
+    #status-bar {
+      flex-shrink: 0;
+      background: #111;
+      border-bottom: 1px solid #222;
+      padding: 6px 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      min-height: 38px;
+      gap: 8px;
+    }
+    #status-text { color: #aaa; flex-shrink: 0; }
+    #fps-display { color: #4ade80; font-weight: 600; flex-shrink: 0; }
+
+    /* Download button in status bar */
+    #download-btn {
+      margin-left: auto;
+      background: #1e293b;
+      border: 1px solid #334;
+      border-radius: 6px;
+      color: #94a3b8;
+      font-size: 12px;
+      padding: 4px 10px;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      flex-shrink: 0;
+    }
+    #download-btn:active { opacity: 0.7; }
+    #entry-count { color: #4ade80; font-weight: 600; }
+
+    /* ── Exercise selector ── */
+    #exercise-bar {
+      flex-shrink: 0;
+      background: #111;
+      border-bottom: 1px solid #222;
+      padding: 8px 12px;
+      display: flex;
+      gap: 8px;
+    }
+    .ex-btn {
+      flex: 1;
+      padding: 8px 4px;
+      background: #1e1e1e;
+      border: 1px solid #333;
+      border-radius: 8px;
+      color: #888;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      text-align: center;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+    .ex-btn.active { background: #1a2e1a; border-color: #4ade80; color: #4ade80; }
+    .ex-btn:active { opacity: 0.7; }
+
+    /* ── Video stage ── */
+    #stage {
+      flex: 1; min-height: 0;
+      background: #000;
+      display: flex;
+      align-items: center; justify-content: center;
+      overflow: hidden;
+    }
+    #overlay { max-width: 100%; max-height: 100%; display: block; }
+    #webcam {
+      position: fixed; bottom: 0; right: 0;
+      width: 1px; height: 1px;
+      opacity: 0.001; pointer-events: none;
+    }
+
+    /* ── Angle readout panel ── */
+    #angle-panel {
+      flex-shrink: 0;
+      background: #0f0f0f;
+      border-top: 1px solid #222;
+      padding: 10px 16px;
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      min-height: 72px;
+    }
+    .angle-item {
+      display: flex; flex-direction: column;
+      align-items: center; gap: 2px;
+    }
+    .angle-label {
+      font-size: 11px; color: #555;
+      text-transform: uppercase; letter-spacing: 0.06em;
+    }
+    .angle-value {
+      font-size: 30px; font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+      transition: color 0.15s;
+    }
+
+    /* Feedback color states */
+    .angle-value.green  { color: #4ade80; }
+    .angle-value.yellow { color: #facc15; }
+    .angle-value.red    { color: #f87171; }
+    .angle-value.hidden-val { font-size: 14px; color: #333; font-weight: 400; }
+
+    /* ── Loading overlay ── */
+    #loading-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.92);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 20px; z-index: 100; padding: 24px; text-align: center;
+    }
+    #loading-overlay.hidden { display: none; }
+    .spinner {
+      width: 44px; height: 44px;
+      border: 3px solid #333; border-top-color: #4ade80;
+      border-radius: 50%; animation: spin 0.75s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #loading-text { color: #ccc; font-size: 15px; line-height: 1.5; max-width: 280px; }
+    #loading-text small { display: block; margin-top: 6px; color: #666; font-size: 12px; }
+    #start-btn {
+      background: #4ade80; color: #0a0a0a;
+      border: none; padding: 14px 36px;
+      border-radius: 10px; font-size: 16px; font-weight: 700;
+      cursor: pointer; display: none; -webkit-tap-highlight-color: transparent;
+    }
+    #start-btn.visible { display: block; }
+    #start-btn:active { opacity: 0.8; }
+    #error-text {
+      color: #f87171; font-size: 14px;
+      display: none; max-width: 280px; line-height: 1.5;
+    }
+    #error-text.visible { display: block; }
+  </style>
+</head>
+<body>
+
+  <div id="status-bar">
+    <span id="status-text">Initializing…</span>
+    <span id="fps-display">-- fps</span>
+    <button id="download-btn" onclick="downloadLog()">
+      ↓ Log <span id="entry-count">0</span>
+    </button>
+  </div>
+
+  <div id="exercise-bar">
+    <button class="ex-btn active" data-ex="squat"    onclick="selectExercise('squat')">Squat</button>
+    <button class="ex-btn"        data-ex="deadlift" onclick="selectExercise('deadlift')">Deadlift</button>
+    <button class="ex-btn"        data-ex="ohp"      onclick="selectExercise('ohp')">OHP</button>
+  </div>
+
+  <div id="stage">
+    <canvas id="overlay"></canvas>
+    <video  id="webcam" autoplay muted playsinline></video>
+  </div>
+
+  <div id="angle-panel"></div>
+
+  <div id="loading-overlay">
+    <div class="spinner" id="spinner"></div>
+    <div id="loading-text">
+      Loading pose model…
+      <small>5–15 s on first load (~14 MB total)</small>
+    </div>
+    <div id="error-text"></div>
+    <button id="start-btn" onclick="startCamera()">Start Camera</button>
+  </div>
+
+  <script type="module">
+    import { PoseLandmarker, FilesetResolver, DrawingUtils }
+      from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/vision_bundle.mjs";
+
+    const WASM_PATH = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/wasm";
+    const MODEL_URL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task";
+    const MIN_VIS   = 0.5;
+    const LOG_INTERVAL_MS = 200;   // ~5 fps logging rate
+
+    // ─────────────────────────────────────────────
+    // Angle thresholds — edit these constants to
+    // tune feedback after your first live test.
+    //
+    // For each angle, define green and yellow ranges.
+    // Anything outside yellow is red.
+    //
+    // Convention for "lower is better" angles (squat depth, hip hinge):
+    //   green: [min, max], yellow: [min, max]
+    // Convention for "higher is better" angles (lockout):
+    //   invert the comparison — see classify() below.
+    // ─────────────────────────────────────────────
+    const THRESHOLDS = {
+      squat: {
+        // Knee angle: smaller = deeper squat (good)
+        knee: { green: [0, 95],   yellow: [96, 115],  higherIsBetter: false },
+        // Hip angle: smaller = deeper fold (good)
+        hip:  { green: [0, 100],  yellow: [101, 120], higherIsBetter: false },
+      },
+      deadlift: {
+        // Hip angle: smaller = more hinge (good)
+        hip:  { green: [0, 90],   yellow: [91, 110],  higherIsBetter: false },
+        // Back angle from vertical: 30-60° is the target hip-hinge range
+        back: { green: [30, 60],  yellow: [20, 70],   higherIsBetter: false, symmetric: true },
+      },
+      ohp: {
+        // Elbow: higher = more extended = good (lockout)
+        elbow: { green: [160, 180], yellow: [140, 159], higherIsBetter: true },
+        // Shoulder elevation: higher = arm more vertical = good
+        shld:  { green: [150, 180], yellow: [120, 149], higherIsBetter: true },
+      },
+    };
+
+    // Map angle definition labels to threshold keys (lowercase, strip spaces)
+    const THRESH_KEY = {
+      'Knee': 'knee', 'Hip': 'hip', 'Back': 'back',
+      'Elbow': 'elbow', 'Shld': 'shld',
+    };
+
+    // Classify a numeric angle value → 'green' | 'yellow' | 'red'
+    function classify(value, rule) {
+      if (value === null) return 'hidden';
+
+      if (rule.symmetric) {
+        // For back angle: green window in middle, yellow outside, red further out
+        const [gMin, gMax] = rule.green;
+        const [yMin, yMax] = rule.yellow;
+        if (value >= gMin && value <= gMax) return 'green';
+        if (value >= yMin && value <= yMax) return 'yellow';
+        return 'red';
+      }
+
+      if (rule.higherIsBetter) {
+        // Green: value in green range; yellow: in yellow range; red: below yellow min
+        const [gMin] = rule.green;
+        const [yMin] = rule.yellow;
+        if (value >= gMin) return 'green';
+        if (value >= yMin) return 'yellow';
+        return 'red';
+      } else {
+        // Green: value in green range; yellow: in yellow range; red: above yellow max
+        const [, gMax] = rule.green;
+        const [, yMax] = rule.yellow;
+        if (value <= gMax) return 'green';
+        if (value <= yMax) return 'yellow';
+        return 'red';
+      }
+    }
+
+    // ─────────────────────────────────────────────
+    // Exercise configuration (same as stage2)
+    // ─────────────────────────────────────────────
+    const EXERCISES = {
+      squat: {
+        label: 'Squat',
+        angles: [
+          { label: 'Knee', lV: 25, rV: 26, lA: 23, rA: 24, lC: 27, rC: 28 },
+          { label: 'Hip',  lV: 23, rV: 24, lA: 11, rA: 12, lC: 25, rC: 26 },
+        ],
+      },
+      deadlift: {
+        label: 'Deadlift',
+        angles: [
+          { label: 'Hip',  lV: 23, rV: 24, lA: 11, rA: 12, lC: 25, rC: 26 },
+          { label: 'Back', special: 'backAngle', visIdx: [11, 12, 23, 24] },
+        ],
+      },
+      ohp: {
+        label: 'OHP',
+        angles: [
+          { label: 'Elbow', lV: 13, rV: 14, lA: 11, rA: 12, lC: 15, rC: 16 },
+          { label: 'Shld',  lV: 11, rV: 12, lA: 23, rA: 24, lC: 13, rC: 14 },
+        ],
+      },
+    };
+
+    let currentExercise = 'squat';
+
+    window.selectExercise = function (key) {
+      currentExercise = key;
+      document.querySelectorAll('.ex-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.ex === key);
+      });
+      renderAnglePanel(null);
+    };
+
+    // ─────────────────────────────────────────────
+    // Session log
+    // ─────────────────────────────────────────────
+    const sessionLog = [];
+    let lastLogTs = 0;
+    const entryCount = document.getElementById('entry-count');
+
+    function maybeLog(exercise, computed) {
+      const now = performance.now();
+      if (now - lastLogTs < LOG_INTERVAL_MS) return;
+      lastLogTs = now;
+
+      const entry = {
+        ts: Date.now(),
+        exercise,
+        angles: {},
+      };
+      computed.forEach(r => {
+        entry.angles[r.label.toLowerCase()] = r.value;
+      });
+      sessionLog.push(entry);
+      entryCount.textContent = sessionLog.length;
+    }
+
+    window.downloadLog = async function () {
+      if (sessionLog.length === 0) {
+        alert('No data logged yet. Start recording to collect angle data.');
+        return;
+      }
+
+      const json     = JSON.stringify(sessionLog, null, 2);
+      const blob     = new Blob([json], { type: 'application/json' });
+      const filename = `form-log-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.json`;
+      const file     = new File([blob], filename, { type: 'application/json' });
+
+      // iOS Safari: download attribute is ignored — use Web Share API
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          // Files must be the ONLY property in the share object (iOS requirement)
+          await navigator.share({ files: [file] });
+          return;
+        } catch (e) {
+          if (e.name === 'AbortError') return;   // user dismissed — not an error
+          // Fall through to anchor download
+        }
+      }
+
+      // Desktop Chrome / Firefox / desktop Safari fallback
+      const url = URL.createObjectURL(blob);
+      const a   = document.createElement('a');
+      a.href     = url;
+      a.download = filename;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1500);
+    };
+
+    // ─────────────────────────────────────────────
+    // Angle math (same as stage2)
+    // ─────────────────────────────────────────────
+    function angleDeg(A, B, C) {
+      const BAx = A.x - B.x, BAy = A.y - B.y;
+      const BCx = C.x - B.x, BCy = C.y - B.y;
+      const dot = BAx * BCx + BAy * BCy;
+      const mA  = Math.sqrt(BAx * BAx + BAy * BAy);
+      const mC  = Math.sqrt(BCx * BCx + BCy * BCy);
+      if (mA < 1e-6 || mC < 1e-6) return null;
+      return Math.round(Math.acos(Math.max(-1, Math.min(1, dot / (mA * mC)))) * 180 / Math.PI);
+    }
+
+    function backAngleDeg(pose) {
+      const shMidX = (pose[11].x + pose[12].x) / 2;
+      const shMidY = (pose[11].y + pose[12].y) / 2;
+      const hpMidX = (pose[23].x + pose[24].x) / 2;
+      const hpMidY = (pose[23].y + pose[24].y) / 2;
+      const svx = shMidX - hpMidX, svy = shMidY - hpMidY;
+      const mag = Math.sqrt(svx * svx + svy * svy);
+      if (mag < 1e-6) return null;
+      return Math.round(Math.acos(Math.max(-1, Math.min(1, (svx * 0 + svy * -1) / mag))) * 180 / Math.PI);
+    }
+
+    function computeAngle(pose, def) {
+      if (def.special === 'backAngle') {
+        const visible = def.visIdx.every(i => (pose[i].visibility ?? 0) >= MIN_VIS);
+        if (!visible) return { label: def.label, value: null, side: '' };
+        return { label: def.label, value: backAngleDeg(pose), side: '' };
+      }
+      const lVis = Math.min(pose[def.lV].visibility ?? 0, pose[def.lA].visibility ?? 0, pose[def.lC].visibility ?? 0);
+      const rVis = Math.min(pose[def.rV].visibility ?? 0, pose[def.rA].visibility ?? 0, pose[def.rC].visibility ?? 0);
+      const leftOk = lVis >= MIN_VIS, rightOk = rVis >= MIN_VIS;
+      if (!leftOk && !rightOk) return { label: def.label, value: null, side: '' };
+      let side, value;
+      if (leftOk && rightOk) {
+        if (lVis >= rVis) { value = angleDeg(pose[def.lA], pose[def.lV], pose[def.lC]); side = 'L'; }
+        else               { value = angleDeg(pose[def.rA], pose[def.rV], pose[def.rC]); side = 'R'; }
+      } else if (leftOk) {
+        value = angleDeg(pose[def.lA], pose[def.lV], pose[def.lC]); side = 'L';
+      } else {
+        value = angleDeg(pose[def.rA], pose[def.rV], pose[def.rC]); side = 'R';
+      }
+      return { label: def.label, value, side };
+    }
+
+    // ─────────────────────────────────────────────
+    // UI — angle panel with color feedback
+    // ─────────────────────────────────────────────
+    const anglePanel = document.getElementById('angle-panel');
+
+    function renderAnglePanel(results) {
+      const defs = EXERCISES[currentExercise].angles;
+      anglePanel.innerHTML = '';
+      defs.forEach((def, i) => {
+        const item   = document.createElement('div');
+        item.className = 'angle-item';
+
+        const labelEl = document.createElement('div');
+        labelEl.className = 'angle-label';
+        labelEl.id = `lbl-${i}`;
+
+        const valueEl = document.createElement('div');
+        valueEl.className = 'angle-value';
+        valueEl.id = `val-${i}`;
+
+        if (results) {
+          const r = results[i];
+          applyResult(labelEl, valueEl, r, def.label);
+        } else {
+          labelEl.textContent = def.label;
+          valueEl.textContent = '—';
+          valueEl.classList.add('hidden-val');
+        }
+
+        item.appendChild(labelEl);
+        item.appendChild(valueEl);
+        anglePanel.appendChild(item);
+      });
+    }
+
+    function applyResult(labelEl, valueEl, r, defLabel) {
+      const sideStr = r.side ? ` ${r.side}` : '';
+      labelEl.textContent = r.label + sideStr;
+
+      // Remove all color classes
+      valueEl.classList.remove('green', 'yellow', 'red', 'hidden-val');
+
+      if (r.value === null) {
+        valueEl.textContent = '—';
+        valueEl.classList.add('hidden-val');
+        return;
+      }
+
+      valueEl.textContent = r.value + '°';
+
+      // Find threshold rule for this angle
+      const thresholdGroup = THRESHOLDS[currentExercise];
+      const key   = THRESH_KEY[defLabel];
+      const rule  = thresholdGroup?.[key];
+      const color = rule ? classify(r.value, rule) : 'green';
+      if (color !== 'hidden') valueEl.classList.add(color);
+    }
+
+    function updateAnglePanelFast(results) {
+      results.forEach((r, i) => {
+        const lbl = document.getElementById(`lbl-${i}`);
+        const val = document.getElementById(`val-${i}`);
+        if (!lbl || !val) { renderAnglePanel(results); return; }
+        applyResult(lbl, val, r, EXERCISES[currentExercise].angles[i].label);
+      });
+    }
+
+    // ─────────────────────────────────────────────
+    // MediaPipe + camera initialization
+    // ─────────────────────────────────────────────
+    const video          = document.getElementById('webcam');
+    const canvas         = document.getElementById('overlay');
+    const ctx            = canvas.getContext('2d');
+    const loadingOverlay = document.getElementById('loading-overlay');
+    const loadingText    = document.getElementById('loading-text');
+    const spinner        = document.getElementById('spinner');
+    const startBtn       = document.getElementById('start-btn');
+    const errorText      = document.getElementById('error-text');
+    const statusText     = document.getElementById('status-text');
+    const fpsDisplay     = document.getElementById('fps-display');
+
+    let poseLandmarker = null;
+    let drawingUtils   = null;
+    let running        = false;
+    let frameCount     = 0;
+    let lastFpsTs      = performance.now();
+
+    async function init() {
+      renderAnglePanel(null);
+      try {
+        setLoading('Loading WASM runtime…');
+        const vision = await FilesetResolver.forVisionTasks(WASM_PATH);
+        setLoading('Loading pose model (~4 MB)…');
+        poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+          baseOptions: { modelAssetPath: MODEL_URL, delegate: 'GPU' },
+          runningMode: 'VIDEO',
+          numPoses: 1,
+          minPoseDetectionConfidence: MIN_VIS,
+          minPosePresenceConfidence:  MIN_VIS,
+          minTrackingConfidence:      MIN_VIS,
+          outputSegmentationMasks: false,
+        });
+        drawingUtils = new DrawingUtils(ctx);
+        spinner.style.display = 'none';
+        setLoading('Model ready! Tap to start camera.');
+        startBtn.classList.add('visible');
+        statusText.textContent = 'Ready';
+      } catch (err) {
+        showError('Model load failed: ' + err.message);
+        console.error(err);
+      }
+    }
+
+    window.startCamera = async function () {
+      startBtn.classList.remove('visible');
+      errorText.classList.remove('visible');
+      spinner.style.display = '';
+      setLoading('Starting camera…');
+      try {
+        const stream = await openCamera();
+        video.srcObject = stream;
+        video.addEventListener('loadedmetadata', () => {
+          canvas.width  = video.videoWidth;
+          canvas.height = video.videoHeight;
+          canvas.style.aspectRatio = `${video.videoWidth} / ${video.videoHeight}`;
+        }, { once: true });
+        video.addEventListener('loadeddata', () => {
+          loadingOverlay.classList.add('hidden');
+          statusText.textContent = 'Live';
+          lastFpsTs = performance.now();
+          running   = true;
+          scheduleFrame();
+        }, { once: true });
+        video.play().catch(e => console.warn('play():', e));
+      } catch (err) {
+        showError('Camera error: ' + err.message);
+        startBtn.textContent = 'Retry';
+        startBtn.classList.add('visible');
+      }
+    };
+
+    async function openCamera() {
+      const base = { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30, max: 30 } };
+      try {
+        return await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { exact: 'environment' }, ...base }, audio: false,
+        });
+      } catch (e) {
+        if (e.name === 'OverconstrainedError' || e.name === 'NotFoundError') {
+          return await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'environment', ...base }, audio: false,
+          });
+        }
+        throw e;
+      }
+    }
+
+    function scheduleFrame() {
+      if (!running) return;
+      if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
+        video.requestVideoFrameCallback(onFrame);
+      } else {
+        requestAnimationFrame(onFrame);
+      }
+    }
+
+    function onFrame() {
+      if (!running || video.readyState < 2) { scheduleFrame(); return; }
+
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const result = poseLandmarker.detectForVideo(video, performance.now());
+
+      if (result.landmarks.length > 0) {
+        const pose = result.landmarks[0];
+
+        drawingUtils.drawConnectors(pose, PoseLandmarker.POSE_CONNECTIONS, { color: '#00ff88', lineWidth: 2 });
+        drawingUtils.drawLandmarks(pose, { radius: 4, color: '#ff4444', fillColor: '#ff444888' });
+
+        const angleDefs = EXERCISES[currentExercise].angles;
+        const computed  = angleDefs.map(def => computeAngle(pose, def));
+        updateAnglePanelFast(computed);
+        maybeLog(currentExercise, computed);
+      } else {
+        EXERCISES[currentExercise].angles.forEach((_, i) => {
+          const val = document.getElementById(`val-${i}`);
+          if (val) { val.textContent = '—'; val.classList.remove('green','yellow','red'); val.classList.add('hidden-val'); }
+        });
+      }
+
+      frameCount++;
+      const now = performance.now();
+      if (now - lastFpsTs >= 1000) {
+        fpsDisplay.textContent = Math.round(frameCount * 1000 / (now - lastFpsTs)) + ' fps';
+        frameCount = 0; lastFpsTs = now;
+      }
+
+      scheduleFrame();
+    }
+
+    function setLoading(msg) { loadingText.innerHTML = msg; }
+    function showError(msg) {
+      spinner.style.display = 'none';
+      loadingText.textContent = '';
+      errorText.textContent = msg;
+      errorText.classList.add('visible');
+    }
+
+    init();
+  </script>
+</body>
+</html>

@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Form Tracker POC</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0a0a0a;
+      color: #e5e7eb;
+      font-family: system-ui, -apple-system, sans-serif;
+      min-height: 100dvh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .container { max-width: 420px; width: 100%; }
+    h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+    .subtitle { color: #6b7280; font-size: 14px; margin-bottom: 32px; }
+
+    .stages { display: flex; flex-direction: column; gap: 12px; margin-bottom: 32px; }
+    .stage-card {
+      display: block;
+      background: #111;
+      border: 1px solid #222;
+      border-radius: 12px;
+      padding: 16px 20px;
+      text-decoration: none;
+      color: inherit;
+      transition: border-color 0.15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .stage-card:active { opacity: 0.8; }
+    .stage-card:hover { border-color: #4ade80; }
+    .stage-num {
+      font-size: 11px;
+      font-weight: 600;
+      color: #4ade80;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 4px;
+    }
+    .stage-title { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
+    .stage-desc { font-size: 13px; color: #6b7280; line-height: 1.4; }
+    .badge {
+      display: inline-block;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      margin-top: 8px;
+      font-weight: 600;
+    }
+    .badge-start { background: #052e16; color: #4ade80; border: 1px solid #166534; }
+    .badge-full  { background: #1c1917; color: #f59e0b; border: 1px solid #78350f; }
+
+    .instructions {
+      background: #111;
+      border: 1px solid #222;
+      border-radius: 12px;
+      padding: 16px 20px;
+    }
+    .instructions h2 { font-size: 14px; font-weight: 600; color: #9ca3af; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.08em; }
+    .instructions ol { padding-left: 18px; }
+    .instructions li { font-size: 13px; color: #9ca3af; line-height: 1.7; }
+    .instructions li strong { color: #e5e7eb; }
+    code { background: #1e1e1e; border: 1px solid #333; border-radius: 4px; padding: 1px 5px; font-size: 12px; font-family: monospace; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Form Tracker POC</h1>
+    <p class="subtitle">MediaPipe Pose · Browser-only · No install required</p>
+
+    <div class="stages">
+      <a class="stage-card" href="stage1.html">
+        <div class="stage-num">Stage 1</div>
+        <div class="stage-title">Camera + Skeleton Overlay</div>
+        <div class="stage-desc">Live pose estimation with 33-point BlazePose skeleton drawn over the camera feed. FPS counter included.</div>
+        <span class="badge badge-start">Start here</span>
+      </a>
+
+      <a class="stage-card" href="stage2.html">
+        <div class="stage-num">Stage 2</div>
+        <div class="stage-title">Joint Angle Readouts</div>
+        <div class="stage-desc">Adds exercise selector (Squat / Deadlift / OHP) and real-time numeric joint angles. Joints hidden by occlusion show "—".</div>
+      </a>
+
+      <a class="stage-card" href="stage3.html">
+        <div class="stage-num">Stage 3</div>
+        <div class="stage-title">Color Feedback + Session Log</div>
+        <div class="stage-desc">Angles turn green / yellow / red based on form thresholds. Session data logged at 5 fps, downloadable as JSON.</div>
+        <span class="badge badge-full">Full POC</span>
+      </a>
+    </div>
+
+    <div class="instructions">
+      <h2>Phone Setup</h2>
+      <ol>
+        <li><strong>Open this URL in Safari</strong> (iPhone) or <strong>Chrome</strong> (Android) — not a QR scanner</li>
+        <li><strong>HTTPS is required</strong> for camera access — GitHub Pages provides this automatically</li>
+        <li>Tap a stage, wait for <strong>model load</strong> (5–15 s on first visit), then tap <strong>Start Camera</strong></li>
+        <li><strong>Prop the phone</strong> at floor level, 3–4 ft away, facing you. <strong>Landscape orientation</strong> gives a wider field of view</li>
+        <li>Stage 3: tap <strong>↓ Log N</strong> after your set to export the session JSON</li>
+      </ol>
+    </div>
+  </div>
+</body>
+</html>

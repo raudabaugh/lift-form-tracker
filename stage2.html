@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Form Tracker – Stage 2: Angles</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0a0a0a;
+      color: #fff;
+      font-family: system-ui, -apple-system, sans-serif;
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Status bar ── */
+    #status-bar {
+      flex-shrink: 0;
+      background: #111;
+      border-bottom: 1px solid #222;
+      padding: 8px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+      min-height: 38px;
+    }
+    #status-text { color: #aaa; }
+    #fps-display { color: #4ade80; font-weight: 600; }
+
+    /* ── Exercise selector ── */
+    #exercise-bar {
+      flex-shrink: 0;
+      background: #111;
+      border-bottom: 1px solid #222;
+      padding: 8px 12px;
+      display: flex;
+      gap: 8px;
+    }
+    .ex-btn {
+      flex: 1;
+      padding: 8px 4px;
+      background: #1e1e1e;
+      border: 1px solid #333;
+      border-radius: 8px;
+      color: #888;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      text-align: center;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+    .ex-btn.active {
+      background: #1a2e1a;
+      border-color: #4ade80;
+      color: #4ade80;
+    }
+    .ex-btn:active { opacity: 0.7; }
+
+    /* ── Video stage ── */
+    #stage {
+      flex: 1;
+      min-height: 0;
+      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    #overlay { max-width: 100%; max-height: 100%; display: block; }
+    #webcam {
+      position: fixed; bottom: 0; right: 0;
+      width: 1px; height: 1px;
+      opacity: 0.001; pointer-events: none;
+    }
+
+    /* ── Angle readout panel ── */
+    #angle-panel {
+      flex-shrink: 0;
+      background: #0f0f0f;
+      border-top: 1px solid #222;
+      padding: 10px 16px;
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      min-height: 64px;
+    }
+    .angle-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+    }
+    .angle-label {
+      font-size: 11px;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .angle-value {
+      font-size: 28px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: #e5e7eb;
+      line-height: 1;
+    }
+    .angle-value.hidden-val {
+      font-size: 14px;
+      color: #444;
+      font-weight: 400;
+    }
+
+    /* ── Loading overlay ── */
+    #loading-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.92);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 20px; z-index: 100; padding: 24px; text-align: center;
+    }
+    #loading-overlay.hidden { display: none; }
+    .spinner {
+      width: 44px; height: 44px;
+      border: 3px solid #333; border-top-color: #4ade80;
+      border-radius: 50%; animation: spin 0.75s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #loading-text { color: #ccc; font-size: 15px; line-height: 1.5; max-width: 280px; }
+    #loading-text small { display: block; margin-top: 6px; color: #666; font-size: 12px; }
+    #start-btn {
+      background: #4ade80; color: #0a0a0a;
+      border: none; padding: 14px 36px;
+      border-radius: 10px; font-size: 16px; font-weight: 700;
+      cursor: pointer; display: none; -webkit-tap-highlight-color: transparent;
+    }
+    #start-btn.visible { display: block; }
+    #start-btn:active { opacity: 0.8; }
+    #error-text {
+      color: #f87171; font-size: 14px;
+      display: none; max-width: 280px; line-height: 1.5;
+    }
+    #error-text.visible { display: block; }
+  </style>
+</head>
+<body>
+
+  <div id="status-bar">
+    <span id="status-text">Initializing…</span>
+    <span id="fps-display">-- fps</span>
+  </div>
+
+  <div id="exercise-bar">
+    <button class="ex-btn active" data-ex="squat"    onclick="selectExercise('squat')">Squat</button>
+    <button class="ex-btn"        data-ex="deadlift" onclick="selectExercise('deadlift')">Deadlift</button>
+    <button class="ex-btn"        data-ex="ohp"      onclick="selectExercise('ohp')">OHP</button>
+  </div>
+
+  <div id="stage">
+    <canvas id="overlay"></canvas>
+    <video  id="webcam" autoplay muted playsinline></video>
+  </div>
+
+  <div id="angle-panel">
+    <!-- Populated dynamically by updateAnglePanel() -->
+  </div>
+
+  <div id="loading-overlay">
+    <div class="spinner" id="spinner"></div>
+    <div id="loading-text">
+      Loading pose model…
+      <small>5–15 s on first load (~14 MB total)</small>
+    </div>
+    <div id="error-text"></div>
+    <button id="start-btn" onclick="startCamera()">Start Camera</button>
+  </div>
+
+  <script type="module">
+    import { PoseLandmarker, FilesetResolver, DrawingUtils }
+      from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/vision_bundle.mjs";
+
+    const WASM_PATH  = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/wasm";
+    const MODEL_URL  = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task";
+    const MIN_VIS    = 0.5;   // landmark visibility threshold
+
+    // ── DOM refs ──
+    const video          = document.getElementById('webcam');
+    const canvas         = document.getElementById('overlay');
+    const ctx            = canvas.getContext('2d');
+    const loadingOverlay = document.getElementById('loading-overlay');
+    const loadingText    = document.getElementById('loading-text');
+    const spinner        = document.getElementById('spinner');
+    const startBtn       = document.getElementById('start-btn');
+    const errorText      = document.getElementById('error-text');
+    const statusText     = document.getElementById('status-text');
+    const fpsDisplay     = document.getElementById('fps-display');
+    const anglePanel     = document.getElementById('angle-panel');
+
+    let poseLandmarker = null;
+    let drawingUtils   = null;
+    let running        = false;
+    let frameCount     = 0;
+    let lastFpsTs      = performance.now();
+
+    // ─────────────────────────────────────────────
+    // Exercise configuration
+    //
+    // For paired angles: lV/rV = left/right vertex landmark index
+    //                    lA/rA = first arm point (A in angle A-V-C)
+    //                    lC/rC = second arm point
+    // For back angle:    special: 'backAngle', visIdx: landmarks needed
+    // ─────────────────────────────────────────────
+    const EXERCISES = {
+      squat: {
+        label: 'Squat',
+        angles: [
+          { label: 'Knee', lV: 25, rV: 26, lA: 23, rA: 24, lC: 27, rC: 28 },
+          { label: 'Hip',  lV: 23, rV: 24, lA: 11, rA: 12, lC: 25, rC: 26 },
+        ],
+      },
+      deadlift: {
+        label: 'Deadlift',
+        angles: [
+          { label: 'Hip',  lV: 23, rV: 24, lA: 11, rA: 12, lC: 25, rC: 26 },
+          { label: 'Back', special: 'backAngle', visIdx: [11, 12, 23, 24] },
+        ],
+      },
+      ohp: {
+        label: 'OHP',
+        angles: [
+          { label: 'Elbow', lV: 13, rV: 14, lA: 11, rA: 12, lC: 15, rC: 16 },
+          { label: 'Shld',  lV: 11, rV: 12, lA: 23, rA: 24, lC: 13, rC: 14 },
+        ],
+      },
+    };
+
+    let currentExercise = 'squat';
+
+    window.selectExercise = function (key) {
+      currentExercise = key;
+      document.querySelectorAll('.ex-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.ex === key);
+      });
+      // Reset panel to dashes when switching exercise
+      renderAnglePanel(null);
+    };
+
+    // ─────────────────────────────────────────────
+    // Angle math
+    // ─────────────────────────────────────────────
+
+    // Interior angle at vertex B in triangle A-B-C (2D, degrees)
+    function angleDeg(A, B, C) {
+      const BAx = A.x - B.x, BAy = A.y - B.y;
+      const BCx = C.x - B.x, BCy = C.y - B.y;
+      const dot  = BAx * BCx + BAy * BCy;
+      const magA = Math.sqrt(BAx * BAx + BAy * BAy);
+      const magC = Math.sqrt(BCx * BCx + BCy * BCy);
+      if (magA < 1e-6 || magC < 1e-6) return null;
+      return Math.round(Math.acos(Math.max(-1, Math.min(1, dot / (magA * magC)))) * 180 / Math.PI);
+    }
+
+    // Spine tilt angle from vertical (0° = upright, 90° = horizontal)
+    // Uses midpoint of shoulders and midpoint of hips.
+    // In MediaPipe screen coords, y increases downward, so "up" = (0, -1).
+    function backAngleDeg(pose) {
+      const shMidX = (pose[11].x + pose[12].x) / 2;
+      const shMidY = (pose[11].y + pose[12].y) / 2;
+      const hpMidX = (pose[23].x + pose[24].x) / 2;
+      const hpMidY = (pose[23].y + pose[24].y) / 2;
+      // Spine vector: hip → shoulder
+      const svx = shMidX - hpMidX;
+      const svy = shMidY - hpMidY;
+      const mag = Math.sqrt(svx * svx + svy * svy);
+      if (mag < 1e-6) return null;
+      // Dot with vertical-up unit vector (0, -1)
+      const cosA = Math.max(-1, Math.min(1, (svx * 0 + svy * -1) / mag));
+      return Math.round(Math.acos(cosA) * 180 / Math.PI);
+    }
+
+    // Compute a single angle definition against the detected pose.
+    // Returns { label, value (number|null), side ('L'|'R'|'B'|'') }
+    function computeAngle(pose, def) {
+      if (def.special === 'backAngle') {
+        const visible = def.visIdx.every(i => (pose[i].visibility ?? 0) >= MIN_VIS);
+        if (!visible) return { label: def.label, value: null };
+        return { label: def.label, value: backAngleDeg(pose), side: '' };
+      }
+
+      // Paired left / right landmarks
+      const lVis = Math.min(
+        pose[def.lV].visibility ?? 0,
+        pose[def.lA].visibility ?? 0,
+        pose[def.lC].visibility ?? 0,
+      );
+      const rVis = Math.min(
+        pose[def.rV].visibility ?? 0,
+        pose[def.rA].visibility ?? 0,
+        pose[def.rC].visibility ?? 0,
+      );
+
+      const leftOk  = lVis >= MIN_VIS;
+      const rightOk = rVis >= MIN_VIS;
+
+      if (!leftOk && !rightOk) return { label: def.label, value: null };
+
+      let side, value;
+      if (leftOk && rightOk) {
+        // Both visible — pick the side with higher min-visibility
+        if (lVis >= rVis) {
+          value = angleDeg(pose[def.lA], pose[def.lV], pose[def.lC]);
+          side  = 'L';
+        } else {
+          value = angleDeg(pose[def.rA], pose[def.rV], pose[def.rC]);
+          side  = 'R';
+        }
+      } else if (leftOk) {
+        value = angleDeg(pose[def.lA], pose[def.lV], pose[def.lC]);
+        side  = 'L';
+      } else {
+        value = angleDeg(pose[def.rA], pose[def.rV], pose[def.rC]);
+        side  = 'R';
+      }
+
+      return { label: def.label, value, side };
+    }
+
+    // ─────────────────────────────────────────────
+    // UI — angle panel
+    // ─────────────────────────────────────────────
+
+    // Render angle items (called once per exercise switch to set up DOM structure)
+    function renderAnglePanel(results) {
+      const defs = EXERCISES[currentExercise].angles;
+      anglePanel.innerHTML = '';
+      defs.forEach((def, i) => {
+        const item = document.createElement('div');
+        item.className = 'angle-item';
+
+        const labelEl = document.createElement('div');
+        labelEl.className = 'angle-label';
+        labelEl.id = `lbl-${i}`;
+
+        const valueEl = document.createElement('div');
+        valueEl.className = 'angle-value';
+        valueEl.id = `val-${i}`;
+
+        if (results) {
+          const r = results[i];
+          const sideStr = r.side && r.side !== '' ? ` ${r.side}` : '';
+          labelEl.textContent = r.label + sideStr;
+          if (r.value === null) {
+            valueEl.textContent = '—';
+            valueEl.classList.add('hidden-val');
+          } else {
+            valueEl.textContent = r.value + '°';
+            valueEl.classList.remove('hidden-val');
+          }
+        } else {
+          labelEl.textContent = def.label;
+          valueEl.textContent = '—';
+        }
+
+        item.appendChild(labelEl);
+        item.appendChild(valueEl);
+        anglePanel.appendChild(item);
+      });
+    }
+
+    // Fast update of existing DOM elements (avoids layout thrash each frame)
+    function updateAnglePanelFast(results) {
+      results.forEach((r, i) => {
+        const lbl = document.getElementById(`lbl-${i}`);
+        const val = document.getElementById(`val-${i}`);
+        if (!lbl || !val) { renderAnglePanel(results); return; }
+
+        const sideStr = r.side && r.side !== '' ? ` ${r.side}` : '';
+        lbl.textContent = r.label + sideStr;
+
+        if (r.value === null) {
+          val.textContent = '—';
+          val.classList.add('hidden-val');
+        } else {
+          val.textContent = r.value + '°';
+          val.classList.remove('hidden-val');
+        }
+      });
+    }
+
+    // ─────────────────────────────────────────────
+    // Initialization
+    // ─────────────────────────────────────────────
+    async function init() {
+      renderAnglePanel(null);   // initial dashes
+      try {
+        setLoading('Loading WASM runtime…');
+        const vision = await FilesetResolver.forVisionTasks(WASM_PATH);
+
+        setLoading('Loading pose model (~4 MB)…');
+        poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+          baseOptions: { modelAssetPath: MODEL_URL, delegate: 'GPU' },
+          runningMode: 'VIDEO',
+          numPoses: 1,
+          minPoseDetectionConfidence: MIN_VIS,
+          minPosePresenceConfidence:  MIN_VIS,
+          minTrackingConfidence:      MIN_VIS,
+          outputSegmentationMasks: false,
+        });
+
+        drawingUtils = new DrawingUtils(ctx);
+        spinner.style.display = 'none';
+        setLoading('Model ready! Tap to start camera.');
+        startBtn.classList.add('visible');
+        statusText.textContent = 'Ready';
+      } catch (err) {
+        showError('Model load failed: ' + err.message);
+        console.error(err);
+      }
+    }
+
+    // ─────────────────────────────────────────────
+    // Camera startup
+    // ─────────────────────────────────────────────
+    window.startCamera = async function () {
+      startBtn.classList.remove('visible');
+      errorText.classList.remove('visible');
+      spinner.style.display = '';
+      setLoading('Starting camera…');
+
+      try {
+        const stream = await openCamera();
+        video.srcObject = stream;
+
+        video.addEventListener('loadedmetadata', () => {
+          canvas.width  = video.videoWidth;
+          canvas.height = video.videoHeight;
+          canvas.style.aspectRatio = `${video.videoWidth} / ${video.videoHeight}`;
+        }, { once: true });
+
+        video.addEventListener('loadeddata', () => {
+          loadingOverlay.classList.add('hidden');
+          statusText.textContent = 'Live';
+          lastFpsTs = performance.now();
+          running = true;
+          scheduleFrame();
+        }, { once: true });
+
+        video.play().catch(e => console.warn('play():', e));
+      } catch (err) {
+        showError('Camera error: ' + err.message);
+        startBtn.textContent = 'Retry';
+        startBtn.classList.add('visible');
+      }
+    };
+
+    async function openCamera() {
+      const base = { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30, max: 30 } };
+      try {
+        return await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { exact: 'environment' }, ...base }, audio: false,
+        });
+      } catch (e) {
+        if (e.name === 'OverconstrainedError' || e.name === 'NotFoundError') {
+          return await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'environment', ...base }, audio: false,
+          });
+        }
+        throw e;
+      }
+    }
+
+    // ─────────────────────────────────────────────
+    // Inference loop
+    // ─────────────────────────────────────────────
+    function scheduleFrame() {
+      if (!running) return;
+      if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
+        video.requestVideoFrameCallback(onFrame);
+      } else {
+        requestAnimationFrame(onFrame);
+      }
+    }
+
+    function onFrame() {
+      if (!running || video.readyState < 2) { scheduleFrame(); return; }
+
+      // Draw video frame
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      // Pose estimation
+      const result = poseLandmarker.detectForVideo(video, performance.now());
+
+      if (result.landmarks.length > 0) {
+        const pose = result.landmarks[0];
+
+        // Skeleton overlay
+        drawingUtils.drawConnectors(pose, PoseLandmarker.POSE_CONNECTIONS, { color: '#00ff88', lineWidth: 2 });
+        drawingUtils.drawLandmarks(pose, { radius: 4, color: '#ff4444', fillColor: '#ff444888' });
+
+        // Angle computation for current exercise
+        const angleDefs = EXERCISES[currentExercise].angles;
+        const computed  = angleDefs.map(def => computeAngle(pose, def));
+        updateAnglePanelFast(computed);
+      } else {
+        // No pose — show dashes
+        EXERCISES[currentExercise].angles.forEach((def, i) => {
+          const val = document.getElementById(`val-${i}`);
+          if (val) { val.textContent = '—'; val.classList.add('hidden-val'); }
+        });
+      }
+
+      // FPS
+      frameCount++;
+      const now = performance.now();
+      if (now - lastFpsTs >= 1000) {
+        fpsDisplay.textContent = Math.round(frameCount * 1000 / (now - lastFpsTs)) + ' fps';
+        frameCount = 0;
+        lastFpsTs  = now;
+      }
+
+      scheduleFrame();
+    }
+
+    // ── Helpers ──
+    function setLoading(msg) { loadingText.innerHTML = msg; }
+    function showError(msg) {
+      spinner.style.display = 'none';
+      loadingText.textContent = '';
+      errorText.textContent = msg;
+      errorText.classList.add('visible');
+    }
+
+    init();
+  </script>
+</body>
+</html>

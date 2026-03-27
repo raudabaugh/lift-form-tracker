@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Form Tracker – Stage 1: Skeleton</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0a0a0a;
+      color: #fff;
+      font-family: system-ui, -apple-system, sans-serif;
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Status bar ── */
+    #status-bar {
+      flex-shrink: 0;
+      background: #111;
+      border-bottom: 1px solid #222;
+      padding: 8px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+      min-height: 38px;
+    }
+    #status-text { color: #aaa; }
+    #fps-display { color: #4ade80; font-weight: 600; letter-spacing: 0.02em; }
+
+    /* ── Video stage ── */
+    #stage {
+      flex: 1;
+      min-height: 0;
+      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    /* Canvas is the visible element — video is invisible but kept in DOM for iOS */
+    #overlay {
+      max-width: 100%;
+      max-height: 100%;
+      display: block;
+    }
+
+    /* Video must stay technically visible to avoid iOS black-canvas bug */
+    #webcam {
+      position: fixed;
+      bottom: 0;
+      right: 0;
+      width: 1px;
+      height: 1px;
+      opacity: 0.001;
+      pointer-events: none;
+    }
+
+    /* ── Loading overlay ── */
+    #loading-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.92);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      z-index: 100;
+      padding: 24px;
+      text-align: center;
+    }
+    #loading-overlay.hidden { display: none; }
+
+    .spinner {
+      width: 44px;
+      height: 44px;
+      border: 3px solid #333;
+      border-top-color: #4ade80;
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #loading-text {
+      color: #ccc;
+      font-size: 15px;
+      line-height: 1.5;
+      max-width: 280px;
+    }
+    #loading-text small { display: block; margin-top: 6px; color: #666; font-size: 12px; }
+
+    #start-btn {
+      background: #4ade80;
+      color: #0a0a0a;
+      border: none;
+      padding: 14px 36px;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      display: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #start-btn.visible { display: block; }
+    #start-btn:active { opacity: 0.8; }
+
+    #error-text {
+      color: #f87171;
+      font-size: 14px;
+      display: none;
+      max-width: 280px;
+      line-height: 1.5;
+    }
+    #error-text.visible { display: block; }
+  </style>
+</head>
+<body>
+
+  <div id="status-bar">
+    <span id="status-text">Initializing…</span>
+    <span id="fps-display">-- fps</span>
+  </div>
+
+  <div id="stage">
+    <!-- Canvas is the primary visual output -->
+    <canvas id="overlay"></canvas>
+    <!-- Video must remain in DOM and visible (1px) to avoid iOS 16 black-canvas bug -->
+    <video id="webcam" autoplay muted playsinline></video>
+  </div>
+
+  <div id="loading-overlay">
+    <div class="spinner" id="spinner"></div>
+    <div id="loading-text">
+      Loading pose model…
+      <small>5–15 s on first load (~14 MB total)</small>
+    </div>
+    <div id="error-text"></div>
+    <button id="start-btn" onclick="startCamera()">Start Camera</button>
+  </div>
+
+  <script type="module">
+    // ─────────────────────────────────────────────
+    // CDN imports — pinned to 0.10.21 (last stable
+    // release with DrawingUtils export fixed)
+    // ─────────────────────────────────────────────
+    import { PoseLandmarker, FilesetResolver, DrawingUtils }
+      from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/vision_bundle.mjs";
+
+    const WASM_PATH  = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/wasm";
+    const MODEL_URL  = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task";
+    const MIN_CONFIDENCE = 0.5;
+
+    // ── DOM refs ──
+    const video          = document.getElementById('webcam');
+    const canvas         = document.getElementById('overlay');
+    const ctx            = canvas.getContext('2d');
+    const loadingOverlay = document.getElementById('loading-overlay');
+    const loadingText    = document.getElementById('loading-text');
+    const spinner        = document.getElementById('spinner');
+    const startBtn       = document.getElementById('start-btn');
+    const errorText      = document.getElementById('error-text');
+    const statusText     = document.getElementById('status-text');
+    const fpsDisplay     = document.getElementById('fps-display');
+
+    // ── State ──
+    let poseLandmarker = null;
+    let drawingUtils   = null;
+    let running        = false;
+
+    // FPS tracking
+    let frameCount   = 0;
+    let lastFpsTs    = performance.now();
+
+    // ─────────────────────────────────────────────
+    // Initialization — load WASM + model
+    // ─────────────────────────────────────────────
+    async function init() {
+      try {
+        setLoading('Loading WASM runtime…');
+        const vision = await FilesetResolver.forVisionTasks(WASM_PATH);
+
+        setLoading('Loading pose model (~4 MB)…');
+        poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath: MODEL_URL,
+            delegate: 'GPU',      // WebGL2 on mobile; auto-falls back to CPU
+          },
+          runningMode: 'VIDEO',   // enables temporal smoothing across frames
+          numPoses: 1,
+          minPoseDetectionConfidence: MIN_CONFIDENCE,
+          minPosePresenceConfidence:  MIN_CONFIDENCE,
+          minTrackingConfidence:      MIN_CONFIDENCE,
+          outputSegmentationMasks: false,  // expensive — disabled for performance
+        });
+
+        drawingUtils = new DrawingUtils(ctx);
+
+        spinner.style.display = 'none';
+        setLoading('Model ready! Tap to start camera.');
+        startBtn.classList.add('visible');
+        statusText.textContent = 'Ready';
+      } catch (err) {
+        showError('Model load failed: ' + err.message);
+        console.error('Init error:', err);
+      }
+    }
+
+    // ─────────────────────────────────────────────
+    // Camera startup
+    // ─────────────────────────────────────────────
+    window.startCamera = async function () {
+      startBtn.classList.remove('visible');
+      errorText.classList.remove('visible');
+      spinner.style.display = '';
+      setLoading('Starting camera…');
+
+      try {
+        const stream = await openCamera();
+
+        video.srcObject = stream;
+
+        // loadedmetadata: safe to read videoWidth/videoHeight on iOS
+        video.addEventListener('loadedmetadata', () => {
+          canvas.width  = video.videoWidth;
+          canvas.height = video.videoHeight;
+          // Tell CSS the correct aspect ratio so letterboxing is avoided
+          canvas.style.aspectRatio = `${video.videoWidth} / ${video.videoHeight}`;
+        }, { once: true });
+
+        // loadeddata: first frame is available, safe to start inference
+        video.addEventListener('loadeddata', () => {
+          loadingOverlay.classList.add('hidden');
+          statusText.textContent = 'Live';
+          lastFpsTs = performance.now();
+          running = true;
+          scheduleFrame();
+        }, { once: true });
+
+        // Explicit play() — belt-and-suspenders alongside autoplay attr
+        video.play().catch(e => console.warn('play():', e));
+
+      } catch (err) {
+        showError('Camera error: ' + err.message);
+        startBtn.textContent = 'Retry';
+        startBtn.classList.add('visible');
+      }
+    };
+
+    // getUserMedia with OverconstrainedError fallback for older iPhones
+    async function openCamera() {
+      const base = { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30, max: 30 } };
+      try {
+        return await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { exact: 'environment' }, ...base },
+          audio: false,
+        });
+      } catch (e) {
+        if (e.name === 'OverconstrainedError' || e.name === 'NotFoundError') {
+          // Some iPhones don't expose 'environment' as exact — retry without exact
+          return await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'environment', ...base },
+            audio: false,
+          });
+        }
+        throw e;
+      }
+    }
+
+    // ─────────────────────────────────────────────
+    // Inference loop
+    // ─────────────────────────────────────────────
+    function scheduleFrame() {
+      if (!running) return;
+      // requestVideoFrameCallback fires once per decoded video frame (Safari 15.4+, Chrome 83+)
+      // Falls back to requestAnimationFrame on older browsers
+      if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
+        video.requestVideoFrameCallback(onFrame);
+      } else {
+        requestAnimationFrame(onFrame);
+      }
+    }
+
+    function onFrame() {
+      if (!running || video.readyState < 2) { scheduleFrame(); return; }
+
+      // Draw current video frame onto canvas
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      // Run pose estimation (synchronous, ~25–35 ms on GPU delegate)
+      const result = poseLandmarker.detectForVideo(video, performance.now());
+
+      // Draw skeleton overlay
+      if (result.landmarks.length > 0) {
+        const pose = result.landmarks[0];
+        drawingUtils.drawConnectors(
+          pose,
+          PoseLandmarker.POSE_CONNECTIONS,
+          { color: '#00ff88', lineWidth: 2 }
+        );
+        drawingUtils.drawLandmarks(pose, {
+          radius: 4,
+          color: '#ff4444',
+          fillColor: '#ff444888',
+        });
+      }
+
+      // FPS counter (updates ~once per second)
+      frameCount++;
+      const now = performance.now();
+      if (now - lastFpsTs >= 1000) {
+        fpsDisplay.textContent = Math.round(frameCount * 1000 / (now - lastFpsTs)) + ' fps';
+        frameCount = 0;
+        lastFpsTs  = now;
+      }
+
+      scheduleFrame();
+    }
+
+    // ─────────────────────────────────────────────
+    // Helpers
+    // ─────────────────────────────────────────────
+    function setLoading(msg) {
+      loadingText.innerHTML = msg;
+    }
+
+    function showError(msg) {
+      spinner.style.display = 'none';
+      loadingText.textContent = '';
+      errorText.textContent = msg;
+      errorText.classList.add('visible');
+    }
+
+    // Kick off
+    init();
+  </script>
+</body>
+</html>
