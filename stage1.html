@@ -32,6 +32,19 @@
     #status-text { color: #aaa; }
     #fps-display { color: #4ade80; font-weight: 600; letter-spacing: 0.02em; }
 
+    #flip-btn {
+      background: none;
+      border: 1px solid #333;
+      border-radius: 6px;
+      color: #888;
+      font-size: 18px;
+      line-height: 1;
+      padding: 3px 8px;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #flip-btn:active { opacity: 0.6; }
+
     /* ── Video stage ── */
     #stage {
       flex: 1;
@@ -125,6 +138,7 @@
   <div id="status-bar">
     <span id="status-text">Initializing…</span>
     <span id="fps-display">-- fps</span>
+    <button id="flip-btn" onclick="flipCamera()" title="Flip camera">⇄</button>
   </div>
 
   <div id="stage">
@@ -169,9 +183,11 @@
     const fpsDisplay     = document.getElementById('fps-display');
 
     // ── State ──
-    let poseLandmarker = null;
-    let drawingUtils   = null;
-    let running        = false;
+    let poseLandmarker   = null;
+    let drawingUtils     = null;
+    let running          = false;
+    let currentStream    = null;
+    let currentFacing    = 'environment';   // 'environment' = rear, 'user' = front
 
     // FPS tracking
     let frameCount   = 0;
@@ -221,7 +237,8 @@
       setLoading('Starting camera…');
 
       try {
-        const stream = await openCamera();
+        const stream = await openCamera(currentFacing);
+        currentStream = stream;
 
         video.srcObject = stream;
 
@@ -253,24 +270,52 @@
     };
 
     // getUserMedia with OverconstrainedError fallback for older iPhones
-    async function openCamera() {
+    async function openCamera(facing = 'environment') {
       const base = { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30, max: 30 } };
       try {
         return await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { exact: 'environment' }, ...base },
+          video: { facingMode: { exact: facing }, ...base },
           audio: false,
         });
       } catch (e) {
         if (e.name === 'OverconstrainedError' || e.name === 'NotFoundError') {
-          // Some iPhones don't expose 'environment' as exact — retry without exact
           return await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: 'environment', ...base },
+            video: { facingMode: facing, ...base },
             audio: false,
           });
         }
         throw e;
       }
     }
+
+    // Flip between rear and front camera while live
+    window.flipCamera = async function () {
+      if (!currentStream) return;   // camera not started yet
+
+      // Must stop existing tracks before requesting a new stream (iOS requirement)
+      currentStream.getTracks().forEach(t => t.stop());
+
+      currentFacing = currentFacing === 'environment' ? 'user' : 'environment';
+      document.getElementById('flip-btn').textContent = currentFacing === 'user' ? '⇄ᴿ' : '⇄';
+
+      try {
+        const stream = await openCamera(currentFacing);
+        currentStream   = stream;
+        video.srcObject = stream;
+        // Re-read dimensions after stream switch (resolution may differ)
+        video.addEventListener('loadedmetadata', () => {
+          canvas.width  = video.videoWidth;
+          canvas.height = video.videoHeight;
+          canvas.style.aspectRatio = `${video.videoWidth} / ${video.videoHeight}`;
+        }, { once: true });
+        video.play().catch(e => console.warn('play():', e));
+      } catch (err) {
+        console.error('Flip failed:', err);
+        // Revert facing label on failure
+        currentFacing = currentFacing === 'environment' ? 'user' : 'environment';
+        document.getElementById('flip-btn').textContent = '⇄';
+      }
+    };
 
     // ─────────────────────────────────────────────
     // Inference loop

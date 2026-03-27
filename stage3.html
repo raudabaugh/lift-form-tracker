@@ -33,6 +33,20 @@
     #status-text { color: #aaa; flex-shrink: 0; }
     #fps-display { color: #4ade80; font-weight: 600; flex-shrink: 0; }
 
+    #flip-btn {
+      background: none;
+      border: 1px solid #333;
+      border-radius: 6px;
+      color: #888;
+      font-size: 18px;
+      line-height: 1;
+      padding: 3px 8px;
+      cursor: pointer;
+      flex-shrink: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #flip-btn:active { opacity: 0.6; }
+
     /* Download button in status bar */
     #download-btn {
       margin-left: auto;
@@ -162,6 +176,7 @@
   <div id="status-bar">
     <span id="status-text">Initializing…</span>
     <span id="fps-display">-- fps</span>
+    <button id="flip-btn" onclick="flipCamera()" title="Flip camera">⇄</button>
     <button id="download-btn" onclick="downloadLog()">
       ↓ Log <span id="entry-count">0</span>
     </button>
@@ -493,6 +508,8 @@
     let poseLandmarker = null;
     let drawingUtils   = null;
     let running        = false;
+    let currentStream  = null;
+    let currentFacing  = 'environment';
     let frameCount     = 0;
     let lastFpsTs      = performance.now();
 
@@ -528,7 +545,8 @@
       spinner.style.display = '';
       setLoading('Starting camera…');
       try {
-        const stream = await openCamera();
+        const stream = await openCamera(currentFacing);
+        currentStream = stream;
         video.srcObject = stream;
         video.addEventListener('loadedmetadata', () => {
           canvas.width  = video.videoWidth;
@@ -550,21 +568,43 @@
       }
     };
 
-    async function openCamera() {
+    async function openCamera(facing = 'environment') {
       const base = { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30, max: 30 } };
       try {
         return await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { exact: 'environment' }, ...base }, audio: false,
+          video: { facingMode: { exact: facing }, ...base }, audio: false,
         });
       } catch (e) {
         if (e.name === 'OverconstrainedError' || e.name === 'NotFoundError') {
           return await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: 'environment', ...base }, audio: false,
+            video: { facingMode: facing, ...base }, audio: false,
           });
         }
         throw e;
       }
     }
+
+    window.flipCamera = async function () {
+      if (!currentStream) return;
+      currentStream.getTracks().forEach(t => t.stop());
+      currentFacing = currentFacing === 'environment' ? 'user' : 'environment';
+      document.getElementById('flip-btn').textContent = currentFacing === 'user' ? '⇄ᴿ' : '⇄';
+      try {
+        const stream = await openCamera(currentFacing);
+        currentStream = stream;
+        video.srcObject = stream;
+        video.addEventListener('loadedmetadata', () => {
+          canvas.width  = video.videoWidth;
+          canvas.height = video.videoHeight;
+          canvas.style.aspectRatio = `${video.videoWidth} / ${video.videoHeight}`;
+        }, { once: true });
+        video.play().catch(e => console.warn('play():', e));
+      } catch (err) {
+        console.error('Flip failed:', err);
+        currentFacing = currentFacing === 'environment' ? 'user' : 'environment';
+        document.getElementById('flip-btn').textContent = '⇄';
+      }
+    };
 
     function scheduleFrame() {
       if (!running) return;
