@@ -1,7 +1,7 @@
 ---
 title: "feat: Exercise Form Tracker POC — Camera Pose Estimation"
 type: feat
-status: active
+status: completed
 date: 2026-03-27
 origin: docs/brainstorms/2026-03-27-exercise-form-tracker-poc-requirements.md
 ---

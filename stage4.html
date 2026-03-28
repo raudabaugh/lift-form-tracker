@@ -1,0 +1,1555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Form Tracker – Stage 4: Set Feedback</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0a0a0a;
+      color: #fff;
+      font-family: system-ui, -apple-system, sans-serif;
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Status bar ── */
+    #status-bar {
+      flex-shrink: 0;
+      background: #111;
+      border-bottom: 1px solid #222;
+      padding: 6px 12px;
+      display: flex;
+      align-items: center;
+      font-size: 12px;
+      min-height: 38px;
+      gap: 8px;
+    }
+    #status-text { color: #aaa; flex-shrink: 0; }
+    #fps-display { color: #4ade80; font-weight: 600; flex-shrink: 0; }
+
+    .status-right {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    #flip-btn, #settings-btn {
+      background: none;
+      border: 1px solid #333;
+      border-radius: 6px;
+      color: #888;
+      font-size: 16px;
+      line-height: 1;
+      padding: 3px 8px;
+      cursor: pointer;
+      flex-shrink: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #flip-btn { font-size: 18px; }
+    #flip-btn:active, #settings-btn:active { opacity: 0.6; }
+
+    #download-btn {
+      background: #1e293b;
+      border: 1px solid #334;
+      border-radius: 6px;
+      color: #94a3b8;
+      font-size: 12px;
+      padding: 4px 10px;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      flex-shrink: 0;
+    }
+    #download-btn:active { opacity: 0.7; }
+    #entry-count { color: #4ade80; font-weight: 600; }
+
+    /* ── Exercise selector ── */
+    #exercise-bar {
+      flex-shrink: 0;
+      background: #111;
+      border-bottom: 1px solid #222;
+      padding: 7px 12px;
+      display: flex;
+      gap: 8px;
+    }
+    .ex-btn {
+      flex: 1;
+      padding: 7px 4px;
+      background: #1e1e1e;
+      border: 1px solid #333;
+      border-radius: 8px;
+      color: #888;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      text-align: center;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+    .ex-btn.active { background: #1a2e1a; border-color: #4ade80; color: #4ade80; }
+    .ex-btn:active { opacity: 0.7; }
+
+    /* ── Video stage ── */
+    #stage {
+      flex: 1; min-height: 0;
+      background: #000;
+      display: flex;
+      align-items: center; justify-content: center;
+      overflow: hidden;
+    }
+    #overlay { max-width: 100%; max-height: 100%; display: block; }
+    #webcam {
+      position: fixed; bottom: 0; right: 0;
+      width: 1px; height: 1px;
+      opacity: 0.001; pointer-events: none;
+    }
+
+    /* ── Angle readout panel ── */
+    #angle-panel {
+      flex-shrink: 0;
+      background: #0f0f0f;
+      border-top: 1px solid #222;
+      padding: 8px 16px;
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      min-height: 62px;
+    }
+    .angle-item { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+    .angle-label { font-size: 10px; color: #555; text-transform: uppercase; letter-spacing: 0.06em; }
+    .angle-value {
+      font-size: 26px; font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+      transition: color 0.15s;
+    }
+    .angle-value.green  { color: #4ade80; }
+    .angle-value.yellow { color: #facc15; }
+    .angle-value.red    { color: #f87171; }
+    .angle-value.hidden-val { font-size: 14px; color: #333; font-weight: 400; }
+
+    /* ── Set panel ── */
+    #set-panel {
+      flex-shrink: 0;
+      background: #0a0a0a;
+      border-top: 1px solid #222;
+      padding: 10px 16px;
+    }
+
+    /* Idle state */
+    #start-set-btn {
+      width: 100%;
+      padding: 13px;
+      background: #4ade80;
+      color: #0a0a0a;
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #start-set-btn:active { opacity: 0.8; }
+
+    /* Active set state */
+    #active-set-ui { display: none; }
+    #active-set-ui.visible { display: block; }
+    #idle-set-ui.hidden { display: none; }
+
+    .set-info-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .set-label {
+      font-size: 11px;
+      color: #555;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    .rep-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      margin-bottom: 10px;
+    }
+    .rep-adj-btn {
+      width: 44px; height: 44px;
+      background: #1e1e1e;
+      border: 1px solid #333;
+      border-radius: 8px;
+      color: #aaa;
+      font-size: 26px;
+      line-height: 1;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .rep-adj-btn:active { opacity: 0.6; }
+    .rep-display {
+      text-align: center;
+      line-height: 1;
+      min-width: 80px;
+    }
+    .rep-count-num {
+      font-size: 40px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      display: block;
+    }
+    .rep-count-label {
+      font-size: 11px;
+      color: #555;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .set-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    #end-set-btn {
+      flex: 1;
+      padding: 10px;
+      background: #1e293b;
+      border: 1px solid #334;
+      border-radius: 8px;
+      color: #94a3b8;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #end-set-btn:active { opacity: 0.7; }
+    #reset-set-link {
+      color: #444;
+      font-size: 13px;
+      cursor: pointer;
+      padding: 8px 6px;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #reset-set-link:active { color: #888; }
+
+    /* ── Loading overlay ── */
+    #loading-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.92);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 20px; z-index: 100; padding: 24px; text-align: center;
+    }
+    #loading-overlay.hidden { display: none; }
+    .spinner {
+      width: 44px; height: 44px;
+      border: 3px solid #333; border-top-color: #4ade80;
+      border-radius: 50%; animation: spin 0.75s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #loading-text { color: #ccc; font-size: 15px; line-height: 1.5; max-width: 280px; }
+    #loading-text small { display: block; margin-top: 6px; color: #666; font-size: 12px; }
+    #start-btn {
+      background: #4ade80; color: #0a0a0a;
+      border: none; padding: 14px 36px;
+      border-radius: 10px; font-size: 16px; font-weight: 700;
+      cursor: pointer; display: none; -webkit-tap-highlight-color: transparent;
+    }
+    #start-btn.visible { display: block; }
+    #start-btn:active { opacity: 0.8; }
+    #error-text {
+      color: #f87171; font-size: 14px;
+      display: none; max-width: 280px; line-height: 1.5;
+    }
+    #error-text.visible { display: block; }
+
+    /* ── Countdown overlay ── */
+    #countdown-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.80);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 12px; z-index: 40;
+      cursor: pointer;
+    }
+    #countdown-overlay.hidden { display: none; }
+    .countdown-number {
+      font-size: 110px;
+      font-weight: 800;
+      color: #facc15;
+      line-height: 1;
+    }
+    .countdown-label { font-size: 17px; color: #ccc; }
+    .countdown-cancel { font-size: 13px; color: #555; margin-top: 8px; }
+
+    /* ── Summary screen ── */
+    #summary-screen {
+      position: fixed; inset: 0;
+      background: #0a0a0a;
+      z-index: 50;
+      display: flex; flex-direction: column;
+      overflow-y: auto;
+      padding: 28px 20px 32px;
+    }
+    #summary-screen.hidden { display: none; }
+
+    .summary-eyebrow {
+      font-size: 11px; color: #555;
+      text-transform: uppercase; letter-spacing: 0.1em;
+      margin-bottom: 4px;
+    }
+    .summary-heading {
+      font-size: 26px; font-weight: 700;
+      margin-bottom: 22px;
+    }
+    .summary-reps-block {
+      margin-bottom: 20px;
+    }
+    .summary-reps-num {
+      font-size: 56px; font-weight: 700;
+      color: #4ade80; line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+    .summary-reps-label {
+      font-size: 13px; color: #555;
+      text-transform: uppercase; letter-spacing: 0.08em;
+      margin-top: 2px;
+    }
+    .quality-pills {
+      display: flex; flex-wrap: wrap; gap: 6px;
+      margin-top: 10px;
+    }
+    .quality-pill {
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 12px; font-weight: 600;
+    }
+    .quality-pill.green  { background: #052e16; color: #4ade80; border: 1px solid #166534; }
+    .quality-pill.yellow { background: #1c1003; color: #facc15; border: 1px solid #78350f; }
+    .quality-pill.red    { background: #1c0404; color: #f87171; border: 1px solid #7f1d1d; }
+    .quality-pill.none   { color: #333; }
+
+    .summary-divider { border: none; border-top: 1px solid #1e1e1e; margin: 20px 0; }
+
+    .summary-form-title {
+      font-size: 11px; color: #555;
+      text-transform: uppercase; letter-spacing: 0.1em;
+      margin-bottom: 14px;
+    }
+    .summary-angle-block { margin-bottom: 20px; }
+    .summary-angle-name {
+      font-size: 13px; color: #888;
+      text-transform: uppercase; letter-spacing: 0.06em;
+      margin-bottom: 8px;
+    }
+    .summary-stats-row {
+      display: flex; gap: 0;
+    }
+    .stat-item { flex: 1; }
+    .stat-val {
+      font-size: 28px; font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: #fff; line-height: 1;
+    }
+    .stat-lbl {
+      font-size: 10px; color: #444;
+      text-transform: uppercase; letter-spacing: 0.06em;
+      margin-top: 2px;
+    }
+    .stat-val.no-data { font-size: 18px; color: #333; }
+
+    #next-set-btn {
+      width: 100%;
+      padding: 16px;
+      background: #4ade80;
+      color: #0a0a0a;
+      border: none;
+      border-radius: 12px;
+      font-size: 18px;
+      font-weight: 700;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      margin-top: auto;
+      flex-shrink: 0;
+    }
+    #next-set-btn:active { opacity: 0.8; }
+
+    /* ── Settings panel ── */
+    #settings-panel {
+      position: fixed; inset: 0;
+      background: #0a0a0a;
+      z-index: 60;
+      display: flex; flex-direction: column;
+      overflow: hidden;
+    }
+    #settings-panel.hidden { display: none; }
+
+    .settings-header {
+      flex-shrink: 0;
+      background: #111;
+      border-bottom: 1px solid #222;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .settings-title { flex: 1; font-size: 16px; font-weight: 600; }
+    .settings-reset {
+      background: none;
+      border: 1px solid #333;
+      border-radius: 6px;
+      color: #666;
+      font-size: 12px;
+      padding: 4px 10px;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .settings-reset:active { opacity: 0.6; }
+    .settings-close {
+      background: none;
+      border: 1px solid #333;
+      border-radius: 6px;
+      color: #888;
+      font-size: 18px;
+      line-height: 1;
+      padding: 3px 9px;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .settings-close:active { opacity: 0.6; }
+
+    #settings-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 16px 32px;
+    }
+
+    .settings-section-title {
+      font-size: 11px; color: #4ade80;
+      text-transform: uppercase; letter-spacing: 0.1em;
+      margin-top: 22px; margin-bottom: 12px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid #1a2e1a;
+    }
+    .settings-section-title:first-child { margin-top: 12px; }
+
+    .threshold-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .threshold-label { flex: 1; font-size: 13px; color: #aaa; line-height: 1.35; }
+    .threshold-control { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+    .thresh-btn {
+      width: 44px; height: 44px;
+      background: #1e1e1e;
+      border: 1px solid #333;
+      border-radius: 8px;
+      color: #aaa;
+      font-size: 22px;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .thresh-btn:active { opacity: 0.6; }
+    .thresh-value {
+      min-width: 52px;
+      text-align: center;
+      font-size: 18px; font-weight: 700;
+      color: #fff;
+      font-variant-numeric: tabular-nums;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="status-bar">
+    <span id="status-text">Initializing…</span>
+    <span id="fps-display">-- fps</span>
+    <div class="status-right">
+      <button id="flip-btn"     onclick="flipCamera()"   title="Flip camera">⇄</button>
+      <button id="settings-btn" onclick="openSettings()" title="Thresholds">⚙</button>
+      <button id="download-btn" onclick="downloadLog()">↓ Log <span id="entry-count">0</span></button>
+    </div>
+  </div>
+
+  <div id="exercise-bar">
+    <button class="ex-btn active" data-ex="squat"    onclick="selectExercise('squat')">Squat</button>
+    <button class="ex-btn"        data-ex="deadlift" onclick="selectExercise('deadlift')">Deadlift</button>
+    <button class="ex-btn"        data-ex="ohp"      onclick="selectExercise('ohp')">OHP</button>
+  </div>
+
+  <div id="stage">
+    <canvas id="overlay"></canvas>
+    <video  id="webcam" autoplay muted playsinline></video>
+  </div>
+
+  <div id="angle-panel"></div>
+
+  <div id="set-panel">
+    <div id="idle-set-ui">
+      <button id="start-set-btn" onclick="startSet()">Start Set</button>
+    </div>
+    <div id="active-set-ui">
+      <div class="set-info-row">
+        <span class="set-label" id="set-label">SET 1</span>
+      </div>
+      <div class="rep-row">
+        <button class="rep-adj-btn" onclick="adjustReps(-1)">−</button>
+        <div class="rep-display">
+          <span class="rep-count-num" id="rep-count-display">0</span>
+          <span class="rep-count-label">Reps</span>
+        </div>
+        <button class="rep-adj-btn" onclick="adjustReps(1)">+</button>
+      </div>
+      <div class="set-actions">
+        <button id="end-set-btn" onclick="endSet()">End Set</button>
+        <span   id="reset-set-link" onclick="resetCurrentSet()">Reset</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Loading overlay -->
+  <div id="loading-overlay">
+    <div class="spinner" id="spinner"></div>
+    <div id="loading-text">
+      Loading pose model…
+      <small>5–15 s on first load (~14 MB total)</small>
+    </div>
+    <div id="error-text"></div>
+    <button id="start-btn" onclick="startCamera()">Start Camera</button>
+  </div>
+
+  <!-- Countdown overlay (auto end-of-set) -->
+  <div id="countdown-overlay" class="hidden" onclick="cancelCountdown()">
+    <div class="countdown-number" id="countdown-number">3</div>
+    <div class="countdown-label">Set ending…</div>
+    <div class="countdown-cancel">Tap anywhere to cancel</div>
+  </div>
+
+  <!-- Summary screen -->
+  <div id="summary-screen" class="hidden">
+    <div class="summary-eyebrow">Summary</div>
+    <div class="summary-heading" id="summary-heading">Set 1 Complete</div>
+
+    <div class="summary-reps-block">
+      <div class="summary-reps-num" id="summary-reps">0</div>
+      <div class="summary-reps-label">Reps</div>
+      <div class="quality-pills" id="summary-quality"></div>
+    </div>
+
+    <hr class="summary-divider">
+
+    <div class="summary-form-title">Angle Stats</div>
+    <div id="summary-angles"></div>
+
+    <button id="next-set-btn" onclick="nextSet()">Next Set</button>
+  </div>
+
+  <!-- Settings / threshold editor -->
+  <div id="settings-panel" class="hidden">
+    <div class="settings-header">
+      <span class="settings-title">Thresholds</span>
+      <button class="settings-reset" onclick="resetToDefaults()">Reset to Defaults</button>
+      <button class="settings-close" onclick="closeSettings()">✕</button>
+    </div>
+    <div id="settings-body"></div>
+  </div>
+
+  <script type="module">
+    import { PoseLandmarker, FilesetResolver, DrawingUtils }
+      from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/vision_bundle.mjs";
+
+    const WASM_PATH      = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/wasm";
+    const MODEL_URL      = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task";
+    const MIN_VIS        = 0.5;
+    const LOG_INTERVAL_MS = 200;   // 5 fps
+    const THRESH_STORAGE_KEY = 'form-tracker-thresholds';
+
+    // ─────────────────────────────────────────────
+    // Thresholds — mutable, localStorage-backed
+    // ─────────────────────────────────────────────
+    const DEFAULT_THRESHOLDS = {
+      squat: {
+        knee: { green: [0, 95],   yellow: [96, 115],  higherIsBetter: false },
+        hip:  { green: [0, 100],  yellow: [101, 120], higherIsBetter: false },
+      },
+      deadlift: {
+        hip:  { green: [0, 90],   yellow: [91, 110],  higherIsBetter: false },
+        back: { green: [30, 60],  yellow: [20, 70],   higherIsBetter: false, symmetric: true },
+      },
+      ohp: {
+        elbow: { green: [160, 180], yellow: [140, 159], higherIsBetter: true },
+        shld:  { green: [150, 180], yellow: [120, 149], higherIsBetter: true },
+      },
+    };
+
+    let THRESHOLDS = JSON.parse(JSON.stringify(DEFAULT_THRESHOLDS));
+
+    function loadThresholds() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(THRESH_STORAGE_KEY));
+        if (saved && typeof saved === 'object') THRESHOLDS = saved;
+      } catch (_) { /* use defaults */ }
+    }
+
+    function saveThresholds() {
+      localStorage.setItem(THRESH_STORAGE_KEY, JSON.stringify(THRESHOLDS));
+    }
+
+    loadThresholds();
+
+    const THRESH_KEY = {
+      'Knee': 'knee', 'Hip': 'hip', 'Back': 'back', 'Elbow': 'elbow', 'Shld': 'shld',
+    };
+
+    // Classify a numeric angle value → 'green' | 'yellow' | 'red' | 'hidden'
+    function classify(value, rule) {
+      if (value === null) return 'hidden';
+      if (rule.symmetric) {
+        const [gMin, gMax] = rule.green, [yMin, yMax] = rule.yellow;
+        if (value >= gMin && value <= gMax) return 'green';
+        if (value >= yMin && value <= yMax) return 'yellow';
+        return 'red';
+      }
+      if (rule.higherIsBetter) {
+        const [gMin] = rule.green, [yMin] = rule.yellow;
+        if (value >= gMin) return 'green';
+        if (value >= yMin) return 'yellow';
+        return 'red';
+      } else {
+        const [, gMax] = rule.green, [, yMax] = rule.yellow;
+        if (value <= gMax) return 'green';
+        if (value <= yMax) return 'yellow';
+        return 'red';
+      }
+    }
+
+    // ─────────────────────────────────────────────
+    // Exercise configuration
+    // repPrimary: which angle def drives rep detection
+    // neutralThreshold: value that means "standing / at rest"
+    // ─────────────────────────────────────────────
+    const EXERCISES = {
+      squat: {
+        label: 'Squat',
+        angles: [
+          { label: 'Knee', lV: 25, rV: 26, lA: 23, rA: 24, lC: 27, rC: 28 },
+          { label: 'Hip',  lV: 23, rV: 24, lA: 11, rA: 12, lC: 25, rC: 26 },
+        ],
+        repPrimary: { defIndex: 0, direction: 'lower' },  // knee goes DOWN into squat
+        neutralThreshold: 155,                             // knee > 155° = standing
+      },
+      deadlift: {
+        label: 'Deadlift',
+        angles: [
+          { label: 'Hip',  lV: 23, rV: 24, lA: 11, rA: 12, lC: 25, rC: 26 },
+          { label: 'Back', special: 'backAngle', visIdx: [11, 12, 23, 24] },
+        ],
+        repPrimary: { defIndex: 0, direction: 'lower' },  // hip goes DOWN into hinge
+        neutralThreshold: 155,                             // hip > 155° = standing
+      },
+      ohp: {
+        label: 'OHP',
+        angles: [
+          { label: 'Elbow', lV: 13, rV: 14, lA: 11, rA: 12, lC: 15, rC: 16 },
+          { label: 'Shld',  lV: 11, rV: 12, lA: 23, rA: 24, lC: 13, rC: 14 },
+        ],
+        repPrimary: { defIndex: 0, direction: 'higher' }, // elbow goes UP into extension
+        neutralThreshold: 120,                             // elbow < 120° = arms at sides
+      },
+    };
+
+    let currentExercise = 'squat';
+
+    // ─────────────────────────────────────────────
+    // Threshold editor items
+    // ─────────────────────────────────────────────
+    const EDITOR_ITEMS = [
+      {
+        section: 'Squat', key: 'squat_knee',
+        label: 'Knee depth target ≤ ___°',
+        get: () => THRESHOLDS.squat.knee.green[1],
+        apply(val) {
+          const old = THRESHOLDS.squat.knee.green[1];
+          THRESHOLDS.squat.knee = { ...THRESHOLDS.squat.knee, green: [0, val], yellow: [val+1, val+20] };
+          return { old, angle: 'squat.knee', field: 'green_max' };
+        },
+      },
+      {
+        section: 'Squat', key: 'squat_hip',
+        label: 'Hip depth target ≤ ___°',
+        get: () => THRESHOLDS.squat.hip.green[1],
+        apply(val) {
+          const old = THRESHOLDS.squat.hip.green[1];
+          THRESHOLDS.squat.hip = { ...THRESHOLDS.squat.hip, green: [0, val], yellow: [val+1, val+20] };
+          return { old, angle: 'squat.hip', field: 'green_max' };
+        },
+      },
+      {
+        section: 'Deadlift', key: 'deadlift_hip',
+        label: 'Hip hinge target ≤ ___°',
+        get: () => THRESHOLDS.deadlift.hip.green[1],
+        apply(val) {
+          const old = THRESHOLDS.deadlift.hip.green[1];
+          THRESHOLDS.deadlift.hip = { ...THRESHOLDS.deadlift.hip, green: [0, val], yellow: [val+1, val+20] };
+          return { old, angle: 'deadlift.hip', field: 'green_max' };
+        },
+      },
+      {
+        section: 'Deadlift', key: 'deadlift_back_min',
+        label: 'Spine angle min ≥ ___°',
+        get: () => THRESHOLDS.deadlift.back.green[0],
+        apply(val) {
+          const old = THRESHOLDS.deadlift.back.green[0];
+          const max = THRESHOLDS.deadlift.back.green[1];
+          THRESHOLDS.deadlift.back = { ...THRESHOLDS.deadlift.back, green: [val, max], yellow: [val-10, max+10] };
+          return { old, angle: 'deadlift.back', field: 'green_min' };
+        },
+      },
+      {
+        section: 'Deadlift', key: 'deadlift_back_max',
+        label: 'Spine angle max ≤ ___°',
+        get: () => THRESHOLDS.deadlift.back.green[1],
+        apply(val) {
+          const old = THRESHOLDS.deadlift.back.green[1];
+          const min = THRESHOLDS.deadlift.back.green[0];
+          THRESHOLDS.deadlift.back = { ...THRESHOLDS.deadlift.back, green: [min, val], yellow: [min-10, val+10] };
+          return { old, angle: 'deadlift.back', field: 'green_max' };
+        },
+      },
+      {
+        section: 'OHP', key: 'ohp_elbow',
+        label: 'Elbow lockout target ≥ ___°',
+        get: () => THRESHOLDS.ohp.elbow.green[0],
+        apply(val) {
+          const old = THRESHOLDS.ohp.elbow.green[0];
+          THRESHOLDS.ohp.elbow = { ...THRESHOLDS.ohp.elbow, green: [val, 180], yellow: [val-20, val-1] };
+          return { old, angle: 'ohp.elbow', field: 'green_min' };
+        },
+      },
+      {
+        section: 'OHP', key: 'ohp_shld',
+        label: 'Shoulder elevation target ≥ ___°',
+        get: () => THRESHOLDS.ohp.shld.green[0],
+        apply(val) {
+          const old = THRESHOLDS.ohp.shld.green[0];
+          THRESHOLDS.ohp.shld = { ...THRESHOLDS.ohp.shld, green: [val, 180], yellow: [val-20, val-1] };
+          return { old, angle: 'ohp.shld', field: 'green_min' };
+        },
+      },
+    ];
+
+    // ─────────────────────────────────────────────
+    // Session state
+    // ─────────────────────────────────────────────
+    const sessionLog  = [];
+    const entryCount  = document.getElementById('entry-count');
+    let lastLogTs     = 0;
+
+    // Set / rep tracking
+    let setNumber     = 0;
+    let repCount      = 0;
+    let appState      = 'idle';  // 'idle' | 'active_set' | 'countdown' | 'summary'
+
+    // Rep state machine
+    let inRep                = false;
+    let repPeakAngle         = null;
+    let framesAtThreshold    = 0;  // debounce counter
+
+    // Neutral / auto end-of-set
+    let neutralTimerStart    = null;   // performance.now() timestamp
+    let countdownValue       = 3;
+    let countdownTimer       = null;
+
+    // ─────────────────────────────────────────────
+    // Logging
+    // ─────────────────────────────────────────────
+    function pushEvent(event) {
+      sessionLog.push(event);
+      entryCount.textContent = sessionLog.length;
+    }
+
+    // Compute all 6 angles regardless of visibility (for log)
+    function computeAllAnglesForLog(pose) {
+      const result = {};
+      for (const [exKey, exConfig] of Object.entries(EXERCISES)) {
+        for (const def of exConfig.angles) {
+          const key = `${exKey}_${def.label.toLowerCase()}`;
+          if (def.special === 'backAngle') {
+            const vis = def.visIdx.map(i => +(pose[i].visibility ?? 0).toFixed(3));
+            const avgVis = +(vis.reduce((a, b) => a + b, 0) / vis.length).toFixed(3);
+            result[key] = { value: backAngleDeg(pose), vis: avgVis };
+          } else {
+            const lMinVis = Math.min(
+              pose[def.lV].visibility ?? 0,
+              pose[def.lA].visibility ?? 0,
+              pose[def.lC].visibility ?? 0
+            );
+            const rMinVis = Math.min(
+              pose[def.rV].visibility ?? 0,
+              pose[def.rA].visibility ?? 0,
+              pose[def.rC].visibility ?? 0
+            );
+            let side, value, visV, visA, visC;
+            if (lMinVis >= rMinVis) {
+              side = 'L';
+              visV = +(pose[def.lV].visibility ?? 0).toFixed(3);
+              visA = +(pose[def.lA].visibility ?? 0).toFixed(3);
+              visC = +(pose[def.lC].visibility ?? 0).toFixed(3);
+              value = angleDeg(pose[def.lA], pose[def.lV], pose[def.lC]);
+            } else {
+              side = 'R';
+              visV = +(pose[def.rV].visibility ?? 0).toFixed(3);
+              visA = +(pose[def.rA].visibility ?? 0).toFixed(3);
+              visC = +(pose[def.rC].visibility ?? 0).toFixed(3);
+              value = angleDeg(pose[def.rA], pose[def.rV], pose[def.rC]);
+            }
+            result[key] = { value, side, visV, visA, visC };
+          }
+        }
+      }
+      return result;
+    }
+
+    function maybeLog(pose) {
+      const now = performance.now();
+      if (now - lastLogTs < LOG_INTERVAL_MS) return;
+      lastLogTs = now;
+      const entry = {
+        type:     'sample',
+        ts:       Date.now(),
+        exercise: currentExercise,
+        setNum:   setNumber,
+        repNum:   repCount,
+        angles:   computeAllAnglesForLog(pose),
+      };
+      sessionLog.push(entry);
+      entryCount.textContent = sessionLog.length;
+    }
+
+    // ─────────────────────────────────────────────
+    // Angle math
+    // ─────────────────────────────────────────────
+    function angleDeg(A, B, C) {
+      const BAx = A.x - B.x, BAy = A.y - B.y;
+      const BCx = C.x - B.x, BCy = C.y - B.y;
+      const dot = BAx * BCx + BAy * BCy;
+      const mA  = Math.sqrt(BAx * BAx + BAy * BAy);
+      const mC  = Math.sqrt(BCx * BCx + BCy * BCy);
+      if (mA < 1e-6 || mC < 1e-6) return null;
+      return Math.round(Math.acos(Math.max(-1, Math.min(1, dot / (mA * mC)))) * 180 / Math.PI);
+    }
+
+    function backAngleDeg(pose) {
+      const shMidX = (pose[11].x + pose[12].x) / 2;
+      const shMidY = (pose[11].y + pose[12].y) / 2;
+      const hpMidX = (pose[23].x + pose[24].x) / 2;
+      const hpMidY = (pose[23].y + pose[24].y) / 2;
+      const svx = shMidX - hpMidX, svy = shMidY - hpMidY;
+      const mag = Math.sqrt(svx * svx + svy * svy);
+      if (mag < 1e-6) return null;
+      return Math.round(Math.acos(Math.max(-1, Math.min(1, (svx * 0 + svy * -1) / mag))) * 180 / Math.PI);
+    }
+
+    // Compute angle for display (visibility-gated, returns {label, value, side})
+    function computeAngle(pose, def) {
+      if (def.special === 'backAngle') {
+        const visible = def.visIdx.every(i => (pose[i].visibility ?? 0) >= MIN_VIS);
+        if (!visible) return { label: def.label, value: null, side: '' };
+        return { label: def.label, value: backAngleDeg(pose), side: '' };
+      }
+      const lVis = Math.min(pose[def.lV].visibility ?? 0, pose[def.lA].visibility ?? 0, pose[def.lC].visibility ?? 0);
+      const rVis = Math.min(pose[def.rV].visibility ?? 0, pose[def.rA].visibility ?? 0, pose[def.rC].visibility ?? 0);
+      const leftOk = lVis >= MIN_VIS, rightOk = rVis >= MIN_VIS;
+      if (!leftOk && !rightOk) return { label: def.label, value: null, side: '' };
+      let side, value;
+      if (leftOk && rightOk) {
+        if (lVis >= rVis) { value = angleDeg(pose[def.lA], pose[def.lV], pose[def.lC]); side = 'L'; }
+        else               { value = angleDeg(pose[def.rA], pose[def.rV], pose[def.rC]); side = 'R'; }
+      } else if (leftOk) {
+        value = angleDeg(pose[def.lA], pose[def.lV], pose[def.lC]); side = 'L';
+      } else {
+        value = angleDeg(pose[def.rA], pose[def.rV], pose[def.rC]); side = 'R';
+      }
+      return { label: def.label, value, side };
+    }
+
+    // ─────────────────────────────────────────────
+    // Rep detection helpers
+    // ─────────────────────────────────────────────
+    function getRepTrigger(exKey) {
+      if (exKey === 'squat')    return THRESHOLDS.squat.knee.yellow[1];
+      if (exKey === 'deadlift') return THRESHOLDS.deadlift.hip.yellow[1];
+      if (exKey === 'ohp')      return THRESHOLDS.ohp.elbow.yellow[0];
+      return null;
+    }
+
+    function isPastRepThreshold(value, exKey) {
+      if (value === null) return false;
+      const trigger = getRepTrigger(exKey);
+      const dir = EXERCISES[exKey].repPrimary.direction;
+      return dir === 'lower' ? value < trigger : value > trigger;
+    }
+
+    function isAtNeutral(value, exKey) {
+      if (value === null) return false;
+      const threshold = EXERCISES[exKey].neutralThreshold;
+      const dir = EXERCISES[exKey].repPrimary.direction;
+      return dir === 'lower' ? value > threshold : value < threshold;
+    }
+
+    function updateRepPeak(current, newVal, dir) {
+      if (current === null) return newVal;
+      return dir === 'lower' ? Math.min(current, newVal) : Math.max(current, newVal);
+    }
+
+    function getPrimaryAngleRule(exKey) {
+      if (exKey === 'squat')    return THRESHOLDS.squat.knee;
+      if (exKey === 'deadlift') return THRESHOLDS.deadlift.hip;
+      if (exKey === 'ohp')      return THRESHOLDS.ohp.elbow;
+      return null;
+    }
+
+    // ─────────────────────────────────────────────
+    // Rep state machine — runs every frame during active_set
+    // ─────────────────────────────────────────────
+    function repDetectionTick(primaryValue) {
+      const ex  = currentExercise;
+      const dir = EXERCISES[ex].repPrimary.direction;
+      const past = isPastRepThreshold(primaryValue, ex);
+
+      if (!inRep) {
+        if (past) {
+          framesAtThreshold++;
+          if (framesAtThreshold >= 2) {
+            inRep        = true;
+            repPeakAngle = primaryValue;
+          }
+        } else {
+          framesAtThreshold = 0;
+        }
+      } else {
+        if (past) {
+          repPeakAngle = updateRepPeak(repPeakAngle, primaryValue, dir);
+        } else {
+          // Crossed back through threshold — rep complete
+          const rule    = getPrimaryAngleRule(ex);
+          const quality = repPeakAngle !== null ? classify(repPeakAngle, rule) : 'red';
+          repCount++;
+          pushEvent({
+            type:      'rep_detected',
+            ts:        Date.now(),
+            exercise:  ex,
+            setNum:    setNumber,
+            repNum:    repCount,
+            peakAngle: repPeakAngle,
+            quality,
+          });
+          updateRepCounterUI();
+          inRep             = false;
+          framesAtThreshold = 0;
+          repPeakAngle      = null;
+        }
+      }
+    }
+
+    // ─────────────────────────────────────────────
+    // Neutral timer + auto end-of-set countdown
+    // ─────────────────────────────────────────────
+    function updateNeutralTimer(primaryValue) {
+      const neutral = isAtNeutral(primaryValue, currentExercise) && !inRep;
+
+      if (neutral && repCount >= 1) {
+        if (neutralTimerStart === null) neutralTimerStart = performance.now();
+        const elapsed = performance.now() - neutralTimerStart;
+        if (elapsed >= 3000 && appState === 'active_set') {
+          startCountdown();
+        }
+      } else {
+        neutralTimerStart = null;
+        if (appState === 'countdown') cancelCountdown();
+      }
+    }
+
+    function startCountdown() {
+      appState       = 'countdown';
+      countdownValue = 3;
+      document.getElementById('countdown-number').textContent = countdownValue;
+      document.getElementById('countdown-overlay').classList.remove('hidden');
+      countdownTimer = setInterval(() => {
+        countdownValue--;
+        if (countdownValue <= 0) {
+          clearInterval(countdownTimer);
+          countdownTimer = null;
+          triggerEndSet();
+        } else {
+          document.getElementById('countdown-number').textContent = countdownValue;
+        }
+      }, 1000);
+    }
+
+    window.cancelCountdown = function () {
+      if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
+      appState = 'active_set';
+      document.getElementById('countdown-overlay').classList.add('hidden');
+      neutralTimerStart = null;
+    };
+
+    // ─────────────────────────────────────────────
+    // Set lifecycle
+    // ─────────────────────────────────────────────
+    function resetRepState() {
+      inRep             = false;
+      repPeakAngle      = null;
+      framesAtThreshold = 0;
+      neutralTimerStart = null;
+    }
+
+    window.startSet = function () {
+      setNumber++;
+      appState  = 'active_set';
+      repCount  = 0;
+      resetRepState();
+
+      pushEvent({
+        type:       'set_start',
+        ts:         Date.now(),
+        setNum:     setNumber,
+        exercise:   currentExercise,
+        thresholds: JSON.parse(JSON.stringify(THRESHOLDS)),
+      });
+
+      document.getElementById('idle-set-ui').classList.add('hidden');
+      document.getElementById('active-set-ui').classList.add('visible');
+      updateSetLabel();
+      updateRepCounterUI();
+    };
+
+    window.endSet = function () {
+      if (appState === 'countdown') cancelCountdown();
+      if (appState !== 'active_set' && appState !== 'countdown') return;
+      triggerEndSet();
+    };
+
+    window.resetCurrentSet = function () {
+      repCount = 0;
+      resetRepState();
+      updateRepCounterUI();
+      // Does NOT emit set_end or go to summary
+    };
+
+    window.adjustReps = function (delta) {
+      repCount = Math.max(0, repCount + delta);
+      updateRepCounterUI();
+    };
+
+    function triggerEndSet() {
+      document.getElementById('countdown-overlay').classList.add('hidden');
+      if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
+
+      // Collect stats from log samples for this set
+      const setEntries = sessionLog.filter(e => e.type === 'sample' && e.setNum === setNumber);
+      const repEvents  = sessionLog.filter(e => e.type === 'rep_detected' && e.setNum === setNumber);
+      const stats      = computeSetStats(setEntries, currentExercise);
+      const quality    = { green: 0, yellow: 0, red: 0 };
+      repEvents.forEach(e => { quality[e.quality] = (quality[e.quality] || 0) + 1; });
+
+      pushEvent({
+        type:      'set_end',
+        ts:        Date.now(),
+        exercise:  currentExercise,
+        setNum:    setNumber,
+        repCount,
+        stats,
+        quality,
+      });
+
+      appState = 'summary';
+      running  = false;
+
+      showSummaryScreen(setNumber, repCount, stats, quality, currentExercise);
+    }
+
+    window.nextSet = function () {
+      document.getElementById('summary-screen').classList.add('hidden');
+
+      setNumber++;
+      appState  = 'active_set';
+      repCount  = 0;
+      resetRepState();
+
+      pushEvent({
+        type:       'set_start',
+        ts:         Date.now(),
+        setNum:     setNumber,
+        exercise:   currentExercise,
+        thresholds: JSON.parse(JSON.stringify(THRESHOLDS)),
+      });
+
+      updateSetLabel();
+      updateRepCounterUI();
+
+      running = true;
+      scheduleFrame();
+    };
+
+    // ─────────────────────────────────────────────
+    // Summary screen
+    // ─────────────────────────────────────────────
+    function computeSetStats(entries, exKey) {
+      const stats = {};
+      EXERCISES[exKey].angles.forEach(def => {
+        const key    = `${exKey}_${def.label.toLowerCase()}`;
+        const values = entries
+          .map(e => e.angles[key]?.value)
+          .filter(v => v !== null && v !== undefined);
+        if (values.length === 0) {
+          stats[def.label] = null;
+        } else {
+          stats[def.label] = {
+            min: Math.min(...values),
+            max: Math.max(...values),
+            avg: Math.round(values.reduce((a, b) => a + b, 0) / values.length),
+          };
+        }
+      });
+      return stats;
+    }
+
+    function showSummaryScreen(setNum, reps, stats, quality, exKey) {
+      document.getElementById('summary-heading').textContent = `Set ${setNum} Complete`;
+      document.getElementById('summary-reps').textContent = reps;
+
+      // Quality pills
+      const pillsEl = document.getElementById('summary-quality');
+      pillsEl.innerHTML = '';
+      if (quality.green > 0)  pillsEl.innerHTML += `<span class="quality-pill green">${quality.green} green</span>`;
+      if (quality.yellow > 0) pillsEl.innerHTML += `<span class="quality-pill yellow">${quality.yellow} yellow</span>`;
+      if (quality.red > 0)    pillsEl.innerHTML += `<span class="quality-pill red">${quality.red} red</span>`;
+      if (!quality.green && !quality.yellow && !quality.red) {
+        pillsEl.innerHTML = '<span class="quality-pill none">no reps auto-detected</span>';
+      }
+
+      // Angle stats
+      const anglesEl = document.getElementById('summary-angles');
+      anglesEl.innerHTML = '';
+      const repPrimaryIdx = EXERCISES[exKey].repPrimary.defIndex;
+
+      EXERCISES[exKey].angles.forEach((def, idx) => {
+        const s   = stats[def.label];
+        const block = document.createElement('div');
+        block.className = 'summary-angle-block';
+
+        const nameLine = document.createElement('div');
+        nameLine.className = 'summary-angle-name';
+        nameLine.textContent = def.label + (idx === repPrimaryIdx ? ' (primary)' : '');
+        block.appendChild(nameLine);
+
+        const statsRow = document.createElement('div');
+        statsRow.className = 'summary-stats-row';
+
+        ['Min', 'Avg', 'Max'].forEach(lbl => {
+          const item = document.createElement('div');
+          item.className = 'stat-item';
+          const key = lbl.toLowerCase();
+          const valDiv = document.createElement('div');
+          valDiv.className = s ? 'stat-val' : 'stat-val no-data';
+          valDiv.textContent = s ? s[key] + '°' : '—';
+          const lblDiv = document.createElement('div');
+          lblDiv.className = 'stat-lbl';
+          lblDiv.textContent = lbl;
+          item.appendChild(valDiv);
+          item.appendChild(lblDiv);
+          statsRow.appendChild(item);
+        });
+
+        block.appendChild(statsRow);
+        anglesEl.appendChild(block);
+      });
+
+      document.getElementById('summary-screen').classList.remove('hidden');
+    }
+
+    // ─────────────────────────────────────────────
+    // UI updates
+    // ─────────────────────────────────────────────
+    function updateSetLabel() {
+      document.getElementById('set-label').textContent = `SET ${setNumber}`;
+    }
+
+    function updateRepCounterUI() {
+      document.getElementById('rep-count-display').textContent = repCount;
+    }
+
+    // ─────────────────────────────────────────────
+    // Angle panel (same as stage3)
+    // ─────────────────────────────────────────────
+    const anglePanel = document.getElementById('angle-panel');
+
+    function renderAnglePanel(results) {
+      const defs = EXERCISES[currentExercise].angles;
+      anglePanel.innerHTML = '';
+      defs.forEach((def, i) => {
+        const item    = document.createElement('div');
+        item.className = 'angle-item';
+        const labelEl = document.createElement('div');
+        labelEl.className = 'angle-label';
+        labelEl.id = `lbl-${i}`;
+        const valueEl = document.createElement('div');
+        valueEl.className = 'angle-value';
+        valueEl.id = `val-${i}`;
+        if (results) {
+          applyResult(labelEl, valueEl, results[i], def.label);
+        } else {
+          labelEl.textContent = def.label;
+          valueEl.textContent = '—';
+          valueEl.classList.add('hidden-val');
+        }
+        item.appendChild(labelEl);
+        item.appendChild(valueEl);
+        anglePanel.appendChild(item);
+      });
+    }
+
+    function applyResult(labelEl, valueEl, r, defLabel) {
+      labelEl.textContent = r.label + (r.side ? ` ${r.side}` : '');
+      valueEl.classList.remove('green', 'yellow', 'red', 'hidden-val');
+      if (r.value === null) {
+        valueEl.textContent = '—';
+        valueEl.classList.add('hidden-val');
+        return;
+      }
+      valueEl.textContent = r.value + '°';
+      const rule  = THRESHOLDS[currentExercise]?.[THRESH_KEY[defLabel]];
+      const color = rule ? classify(r.value, rule) : 'green';
+      if (color !== 'hidden') valueEl.classList.add(color);
+    }
+
+    function updateAnglePanelFast(results) {
+      results.forEach((r, i) => {
+        const lbl = document.getElementById(`lbl-${i}`);
+        const val = document.getElementById(`val-${i}`);
+        if (!lbl || !val) { renderAnglePanel(results); return; }
+        applyResult(lbl, val, r, EXERCISES[currentExercise].angles[i].label);
+      });
+    }
+
+    // ─────────────────────────────────────────────
+    // Exercise selection
+    // ─────────────────────────────────────────────
+    window.selectExercise = function (key) {
+      currentExercise = key;
+      document.querySelectorAll('.ex-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.ex === key);
+      });
+      renderAnglePanel(null);
+
+      // Reset rep state when switching exercises during an active set
+      if (appState === 'active_set' || appState === 'countdown') {
+        if (appState === 'countdown') cancelCountdown();
+        repCount  = 0;
+        resetRepState();
+        updateRepCounterUI();
+      }
+    };
+
+    // ─────────────────────────────────────────────
+    // Threshold editor
+    // ─────────────────────────────────────────────
+    function renderThresholdEditor() {
+      const body = document.getElementById('settings-body');
+      body.innerHTML = '';
+      let currentSection = null;
+
+      EDITOR_ITEMS.forEach(item => {
+        if (item.section !== currentSection) {
+          currentSection = item.section;
+          const sEl = document.createElement('div');
+          sEl.className = 'settings-section-title';
+          sEl.textContent = currentSection;
+          body.appendChild(sEl);
+        }
+
+        const row = document.createElement('div');
+        row.className = 'threshold-row';
+        row.innerHTML = `
+          <div class="threshold-label">${item.label}</div>
+          <div class="threshold-control">
+            <button class="thresh-btn" data-key="${item.key}" data-delta="-5">−</button>
+            <div class="thresh-value" id="thresh-val-${item.key}">${item.get()}°</div>
+            <button class="thresh-btn" data-key="${item.key}" data-delta="5">+</button>
+          </div>`;
+        body.appendChild(row);
+      });
+
+      // Attach handlers via delegation to avoid inline onclick issues
+      body.addEventListener('click', (e) => {
+        const btn = e.target.closest('.thresh-btn');
+        if (!btn) return;
+        changeThreshold(btn.dataset.key, parseInt(btn.dataset.delta, 10));
+      });
+    }
+
+    function changeThreshold(key, delta) {
+      const item = EDITOR_ITEMS.find(i => i.key === key);
+      if (!item) return;
+      const newVal = item.get() + delta;
+      if (newVal < 0 || newVal > 180) return;
+      const { old, angle, field } = item.apply(newVal);
+      pushEvent({
+        type:   'threshold_changed',
+        ts:     Date.now(),
+        key,
+        angle,
+        field,
+        oldVal: old,
+        newVal,
+      });
+      saveThresholds();
+      const el = document.getElementById(`thresh-val-${key}`);
+      if (el) el.textContent = newVal + '°';
+    }
+
+    window.resetToDefaults = function () {
+      THRESHOLDS = JSON.parse(JSON.stringify(DEFAULT_THRESHOLDS));
+      localStorage.removeItem(THRESH_STORAGE_KEY);
+      pushEvent({ type: 'threshold_changed', ts: Date.now(), key: 'all', angle: 'all', field: 'reset_to_defaults', oldVal: null, newVal: null });
+      EDITOR_ITEMS.forEach(item => {
+        const el = document.getElementById(`thresh-val-${item.key}`);
+        if (el) el.textContent = item.get() + '°';
+      });
+    };
+
+    window.openSettings = function () {
+      renderThresholdEditor();
+      document.getElementById('settings-panel').classList.remove('hidden');
+    };
+
+    window.closeSettings = function () {
+      document.getElementById('settings-panel').classList.add('hidden');
+    };
+
+    // ─────────────────────────────────────────────
+    // Log download (same pattern as stage3)
+    // ─────────────────────────────────────────────
+    window.downloadLog = async function () {
+      const json     = JSON.stringify(sessionLog, null, 2);
+      const blob     = new Blob([json], { type: 'application/json' });
+      const filename = `form-log-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.json`;
+      const file     = new File([blob], filename, { type: 'application/json' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try { await navigator.share({ files: [file] }); return; }
+        catch (e) { if (e.name === 'AbortError') return; }
+      }
+      const url = URL.createObjectURL(blob);
+      const a   = document.createElement('a');
+      a.href = url; a.download = filename; a.style.display = 'none';
+      document.body.appendChild(a); a.click();
+      setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1500);
+    };
+
+    // ─────────────────────────────────────────────
+    // MediaPipe + camera initialization
+    // ─────────────────────────────────────────────
+    const video          = document.getElementById('webcam');
+    const canvas         = document.getElementById('overlay');
+    const ctx            = canvas.getContext('2d');
+    const loadingOverlay = document.getElementById('loading-overlay');
+    const loadingText    = document.getElementById('loading-text');
+    const spinner        = document.getElementById('spinner');
+    const startBtn       = document.getElementById('start-btn');
+    const errorText      = document.getElementById('error-text');
+    const statusText     = document.getElementById('status-text');
+    const fpsDisplay     = document.getElementById('fps-display');
+
+    let poseLandmarker = null;
+    let drawingUtils   = null;
+    let running        = false;
+    let currentStream  = null;
+    let currentFacing  = 'environment';
+    let frameCount     = 0;
+    let lastFpsTs      = performance.now();
+
+    async function init() {
+      renderAnglePanel(null);
+      try {
+        setLoading('Loading WASM runtime…');
+        const vision = await FilesetResolver.forVisionTasks(WASM_PATH);
+        setLoading('Loading pose model (~4 MB)…');
+        poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+          baseOptions: { modelAssetPath: MODEL_URL, delegate: 'GPU' },
+          runningMode: 'VIDEO',
+          numPoses: 1,
+          minPoseDetectionConfidence: MIN_VIS,
+          minPosePresenceConfidence:  MIN_VIS,
+          minTrackingConfidence:      MIN_VIS,
+          outputSegmentationMasks: false,
+        });
+        drawingUtils = new DrawingUtils(ctx);
+        spinner.style.display = 'none';
+        setLoading('Model ready! Tap to start camera.');
+        startBtn.classList.add('visible');
+        statusText.textContent = 'Ready';
+      } catch (err) {
+        showError('Model load failed: ' + err.message);
+        console.error(err);
+      }
+    }
+
+    window.startCamera = async function () {
+      startBtn.classList.remove('visible');
+      errorText.classList.remove('visible');
+      spinner.style.display = '';
+      setLoading('Starting camera…');
+      try {
+        const stream = await openCamera(currentFacing);
+        currentStream = stream;
+        video.srcObject = stream;
+        video.addEventListener('loadedmetadata', () => {
+          canvas.width  = video.videoWidth;
+          canvas.height = video.videoHeight;
+          canvas.style.aspectRatio = `${video.videoWidth} / ${video.videoHeight}`;
+        }, { once: true });
+        video.addEventListener('loadeddata', () => {
+          loadingOverlay.classList.add('hidden');
+          statusText.textContent = 'Live';
+          lastFpsTs = performance.now();
+          running   = true;
+          scheduleFrame();
+        }, { once: true });
+        video.play().catch(e => console.warn('play():', e));
+      } catch (err) {
+        showError('Camera error: ' + err.message);
+        startBtn.textContent = 'Retry';
+        startBtn.classList.add('visible');
+      }
+    };
+
+    async function openCamera(facing = 'environment') {
+      const base = { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30, max: 30 } };
+      try {
+        return await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { exact: facing }, ...base }, audio: false,
+        });
+      } catch (e) {
+        if (e.name === 'OverconstrainedError' || e.name === 'NotFoundError') {
+          return await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: facing, ...base }, audio: false,
+          });
+        }
+        throw e;
+      }
+    }
+
+    window.flipCamera = async function () {
+      if (!currentStream) return;
+      currentStream.getTracks().forEach(t => t.stop());
+      currentFacing = currentFacing === 'environment' ? 'user' : 'environment';
+      document.getElementById('flip-btn').textContent = currentFacing === 'user' ? '⇄ᴿ' : '⇄';
+      try {
+        const stream = await openCamera(currentFacing);
+        currentStream = stream;
+        video.srcObject = stream;
+        video.addEventListener('loadedmetadata', () => {
+          canvas.width  = video.videoWidth;
+          canvas.height = video.videoHeight;
+          canvas.style.aspectRatio = `${video.videoWidth} / ${video.videoHeight}`;
+        }, { once: true });
+        video.play().catch(e => console.warn('play():', e));
+      } catch (err) {
+        console.error('Flip failed:', err);
+        currentFacing = currentFacing === 'environment' ? 'user' : 'environment';
+        document.getElementById('flip-btn').textContent = '⇄';
+      }
+    };
+
+    // ─────────────────────────────────────────────
+    // Inference loop
+    // ─────────────────────────────────────────────
+    function scheduleFrame() {
+      if (!running) return;
+      if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
+        video.requestVideoFrameCallback(onFrame);
+      } else {
+        requestAnimationFrame(onFrame);
+      }
+    }
+
+    function onFrame() {
+      if (!running || video.readyState < 2) { scheduleFrame(); return; }
+
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const result = poseLandmarker.detectForVideo(video, performance.now());
+
+      if (result.landmarks.length > 0) {
+        const pose = result.landmarks[0];
+
+        drawingUtils.drawConnectors(pose, PoseLandmarker.POSE_CONNECTIONS, { color: '#00ff88', lineWidth: 2 });
+        drawingUtils.drawLandmarks(pose, { radius: 4, color: '#ff4444', fillColor: '#ff444888' });
+
+        const angleDefs = EXERCISES[currentExercise].angles;
+        const computed  = angleDefs.map(def => computeAngle(pose, def));
+        updateAnglePanelFast(computed);
+
+        if (appState === 'active_set' || appState === 'countdown') {
+          const primaryValue = computed[EXERCISES[currentExercise].repPrimary.defIndex].value;
+
+          if (appState === 'active_set') repDetectionTick(primaryValue);
+          updateNeutralTimer(primaryValue);
+          maybeLog(pose);
+        }
+      } else {
+        // No pose — clear angle display
+        EXERCISES[currentExercise].angles.forEach((_, i) => {
+          const val = document.getElementById(`val-${i}`);
+          if (val) {
+            val.textContent = '—';
+            val.classList.remove('green', 'yellow', 'red');
+            val.classList.add('hidden-val');
+          }
+        });
+        // Reset neutral timer if tracking
+        if (appState === 'active_set' || appState === 'countdown') {
+          neutralTimerStart = null;
+          if (appState === 'countdown') cancelCountdown();
+        }
+      }
+
+      frameCount++;
+      const now = performance.now();
+      if (now - lastFpsTs >= 1000) {
+        fpsDisplay.textContent = Math.round(frameCount * 1000 / (now - lastFpsTs)) + ' fps';
+        frameCount = 0; lastFpsTs = now;
+      }
+
+      scheduleFrame();
+    }
+
+    // ─────────────────────────────────────────────
+    // Helpers
+    // ─────────────────────────────────────────────
+    function setLoading(msg) { loadingText.innerHTML = msg; }
+    function showError(msg) {
+      spinner.style.display = 'none';
+      loadingText.textContent = '';
+      errorText.textContent = msg;
+      errorText.classList.add('visible');
+    }
+
+    init();
+  </script>
+</body>
+</html>
