@@ -767,7 +767,8 @@
     // Rep state machine
     let inRep                = false;
     let repPeakAngle         = null;
-    let framesAtThreshold    = 0;  // debounce counter
+    let framesAtThreshold    = 0;   // debounce counter
+    let mustReturnToNeutral  = true; // gate: must reach neutral before first/next rep
 
     // Neutral / auto end-of-set
     let neutralTimerStart    = null;   // performance.now() timestamp
@@ -929,6 +930,19 @@
     function repDetectionTick(primaryValue) {
       const ex  = currentExercise;
       const dir = EXERCISES[ex].repPrimary.direction;
+
+      // Neutral gate: must reach neutral position before a rep can start.
+      // Prevents double-counting from threshold oscillation on the way down,
+      // and spurious counts when the set begins mid-movement.
+      if (mustReturnToNeutral) {
+        if (isAtNeutral(primaryValue, ex)) {
+          mustReturnToNeutral = false;
+        } else {
+          framesAtThreshold = 0;
+          return;
+        }
+      }
+
       const past = isPastRepThreshold(primaryValue, ex);
 
       if (!inRep) {
@@ -959,9 +973,10 @@
             quality,
           });
           updateRepCounterUI();
-          inRep             = false;
-          framesAtThreshold = 0;
-          repPeakAngle      = null;
+          inRep               = false;
+          framesAtThreshold   = 0;
+          repPeakAngle        = null;
+          mustReturnToNeutral = true; // must reach neutral before the next rep
         }
       }
     }
@@ -1012,10 +1027,11 @@
     // Set lifecycle
     // ─────────────────────────────────────────────
     function resetRepState() {
-      inRep             = false;
-      repPeakAngle      = null;
-      framesAtThreshold = 0;
-      neutralTimerStart = null;
+      inRep               = false;
+      repPeakAngle        = null;
+      framesAtThreshold   = 0;
+      neutralTimerStart   = null;
+      mustReturnToNeutral = true;
     }
 
     window.startSet = function () {
