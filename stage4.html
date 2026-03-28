@@ -601,7 +601,17 @@
     function loadThresholds() {
       try {
         const saved = JSON.parse(localStorage.getItem(THRESH_STORAGE_KEY));
-        if (saved && typeof saved === 'object') THRESHOLDS = saved;
+        if (saved && typeof saved === 'object') {
+          // Merge onto defaults so missing keys (e.g. from older saved versions)
+          // never leave THRESHOLDS with undefined exercise entries.
+          const merged = JSON.parse(JSON.stringify(DEFAULT_THRESHOLDS));
+          for (const ex of Object.keys(merged)) {
+            if (saved[ex] && typeof saved[ex] === 'object') {
+              Object.assign(merged[ex], saved[ex]);
+            }
+          }
+          THRESHOLDS = merged;
+        }
       } catch (_) { /* use defaults */ }
     }
 
@@ -829,16 +839,14 @@
       const now = performance.now();
       if (now - lastLogTs < LOG_INTERVAL_MS) return;
       lastLogTs = now;
-      const entry = {
+      pushEvent({
         type:     'sample',
         ts:       Date.now(),
         exercise: currentExercise,
         setNum:   setNumber,
         repNum:   repCount,
         angles:   computeAllAnglesForLog(pose),
-      };
-      sessionLog.push(entry);
-      entryCount.textContent = sessionLog.length;
+      });
     }
 
     // ─────────────────────────────────────────────
@@ -1000,6 +1008,7 @@
     }
 
     function startCountdown() {
+      if (countdownTimer !== null) return;  // already running
       appState       = 'countdown';
       countdownValue = 3;
       document.getElementById('countdown-number').textContent = countdownValue;
@@ -1061,6 +1070,7 @@
     };
 
     window.resetCurrentSet = function () {
+      if (appState === 'countdown') cancelCountdown();
       repCount = 0;
       resetRepState();
       updateRepCounterUI();
@@ -1073,6 +1083,8 @@
     };
 
     function triggerEndSet() {
+      if (appState === 'summary') return;  // idempotency guard
+      closeSettings();
       document.getElementById('countdown-overlay').classList.add('hidden');
       if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
 
@@ -1100,6 +1112,7 @@
     }
 
     window.nextSet = function () {
+      if (appState !== 'summary') return;  // guard against double-tap
       document.getElementById('summary-screen').classList.add('hidden');
 
       setNumber++;
@@ -1310,13 +1323,6 @@
           </div>`;
         body.appendChild(row);
       });
-
-      // Attach handlers via delegation to avoid inline onclick issues
-      body.addEventListener('click', (e) => {
-        const btn = e.target.closest('.thresh-btn');
-        if (!btn) return;
-        changeThreshold(btn.dataset.key, parseInt(btn.dataset.delta, 10));
-      });
     }
 
     function changeThreshold(key, delta) {
@@ -1348,6 +1354,13 @@
         if (el) el.textContent = item.get() + '°';
       });
     };
+
+    // Attach threshold editor click handler once — prevents accumulation on repeated opens
+    document.getElementById('settings-body').addEventListener('click', (e) => {
+      const btn = e.target.closest('.thresh-btn');
+      if (!btn) return;
+      changeThreshold(btn.dataset.key, parseInt(btn.dataset.delta, 10));
+    });
 
     window.openSettings = function () {
       renderThresholdEditor();
@@ -1472,6 +1485,8 @@
 
     window.flipCamera = async function () {
       if (!currentStream) return;
+      const wasRunning = running;
+      running = false;  // pause inference loop during stream switch
       currentStream.getTracks().forEach(t => t.stop());
       currentFacing = currentFacing === 'environment' ? 'user' : 'environment';
       document.getElementById('flip-btn').textContent = currentFacing === 'user' ? '⇄ᴿ' : '⇄';
@@ -1484,11 +1499,15 @@
           canvas.height = video.videoHeight;
           canvas.style.aspectRatio = `${video.videoWidth} / ${video.videoHeight}`;
         }, { once: true });
+        video.addEventListener('loadeddata', () => {
+          if (wasRunning) { running = true; scheduleFrame(); }
+        }, { once: true });
         video.play().catch(e => console.warn('play():', e));
       } catch (err) {
         console.error('Flip failed:', err);
         currentFacing = currentFacing === 'environment' ? 'user' : 'environment';
         document.getElementById('flip-btn').textContent = '⇄';
+        if (wasRunning) { running = true; scheduleFrame(); }
       }
     };
 
