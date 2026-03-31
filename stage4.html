@@ -273,25 +273,6 @@
     }
     #error-text.visible { display: block; }
 
-    /* ── Countdown overlay ── */
-    #countdown-overlay {
-      position: fixed; inset: 0;
-      background: rgba(0,0,0,0.80);
-      display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      gap: 12px; z-index: 40;
-      cursor: pointer;
-    }
-    #countdown-overlay.hidden { display: none; }
-    .countdown-number {
-      font-size: 110px;
-      font-weight: 800;
-      color: #facc15;
-      line-height: 1;
-    }
-    .countdown-label { font-size: 17px; color: #ccc; }
-    .countdown-cancel { font-size: 13px; color: #555; margin-top: 8px; }
-
     /* ── Summary screen ── */
     #summary-screen {
       position: fixed; inset: 0;
@@ -532,13 +513,6 @@
     <button id="start-btn" onclick="startCamera()">Start Camera</button>
   </div>
 
-  <!-- Countdown overlay (auto end-of-set) -->
-  <div id="countdown-overlay" class="hidden" onclick="cancelCountdown()">
-    <div class="countdown-number" id="countdown-number">3</div>
-    <div class="countdown-label">Set ending…</div>
-    <div class="countdown-cancel">Tap anywhere to cancel</div>
-  </div>
-
   <!-- Summary screen -->
   <div id="summary-screen" class="hidden">
     <div class="summary-eyebrow">Summary</div>
@@ -772,7 +746,7 @@
     // Set / rep tracking
     let setNumber     = 0;
     let repCount      = 0;
-    let appState      = 'idle';  // 'idle' | 'active_set' | 'countdown' | 'summary'
+    let appState      = 'idle';  // 'idle' | 'active_set' | 'summary'
 
     // Rep state machine
     let inRep                = false;
@@ -780,10 +754,6 @@
     let framesAtThreshold    = 0;   // debounce counter
     let mustReturnToNeutral  = true; // gate: must reach neutral before first/next rep
 
-    // Neutral / auto end-of-set
-    let neutralTimerStart    = null;   // performance.now() timestamp
-    let countdownValue       = 3;
-    let countdownTimer       = null;
 
     // ─────────────────────────────────────────────
     // Logging
@@ -990,56 +960,12 @@
     }
 
     // ─────────────────────────────────────────────
-    // Neutral timer + auto end-of-set countdown
-    // ─────────────────────────────────────────────
-    function updateNeutralTimer(primaryValue) {
-      const neutral = isAtNeutral(primaryValue, currentExercise) && !inRep;
-
-      if (neutral && repCount >= 1) {
-        if (neutralTimerStart === null) neutralTimerStart = performance.now();
-        const elapsed = performance.now() - neutralTimerStart;
-        if (elapsed >= 3000 && appState === 'active_set') {
-          startCountdown();
-        }
-      } else {
-        neutralTimerStart = null;
-        if (appState === 'countdown') cancelCountdown();
-      }
-    }
-
-    function startCountdown() {
-      if (countdownTimer !== null) return;  // already running
-      appState       = 'countdown';
-      countdownValue = 3;
-      document.getElementById('countdown-number').textContent = countdownValue;
-      document.getElementById('countdown-overlay').classList.remove('hidden');
-      countdownTimer = setInterval(() => {
-        countdownValue--;
-        if (countdownValue <= 0) {
-          clearInterval(countdownTimer);
-          countdownTimer = null;
-          triggerEndSet();
-        } else {
-          document.getElementById('countdown-number').textContent = countdownValue;
-        }
-      }, 1000);
-    }
-
-    window.cancelCountdown = function () {
-      if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
-      appState = 'active_set';
-      document.getElementById('countdown-overlay').classList.add('hidden');
-      neutralTimerStart = null;
-    };
-
-    // ─────────────────────────────────────────────
     // Set lifecycle
     // ─────────────────────────────────────────────
     function resetRepState() {
       inRep               = false;
       repPeakAngle        = null;
       framesAtThreshold   = 0;
-      neutralTimerStart   = null;
       mustReturnToNeutral = true;
     }
 
@@ -1064,13 +990,11 @@
     };
 
     window.endSet = function () {
-      if (appState === 'countdown') cancelCountdown();
-      if (appState !== 'active_set' && appState !== 'countdown') return;
+      if (appState !== 'active_set') return;
       triggerEndSet();
     };
 
     window.resetCurrentSet = function () {
-      if (appState === 'countdown') cancelCountdown();
       repCount = 0;
       resetRepState();
       updateRepCounterUI();
@@ -1085,8 +1009,6 @@
     function triggerEndSet() {
       if (appState === 'summary') return;  // idempotency guard
       closeSettings();
-      document.getElementById('countdown-overlay').classList.add('hidden');
-      if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
 
       // Collect stats from log samples for this set
       const setEntries = sessionLog.filter(e => e.type === 'sample' && e.setNum === setNumber);
@@ -1287,8 +1209,7 @@
       renderAnglePanel(null);
 
       // Reset rep state when switching exercises during an active set
-      if (appState === 'active_set' || appState === 'countdown') {
-        if (appState === 'countdown') cancelCountdown();
+      if (appState === 'active_set') {
         repCount  = 0;
         resetRepState();
         updateRepCounterUI();
@@ -1539,11 +1460,10 @@
         const computed  = angleDefs.map(def => computeAngle(pose, def));
         updateAnglePanelFast(computed);
 
-        if (appState === 'active_set' || appState === 'countdown') {
+        if (appState === 'active_set') {
           const primaryValue = computed[EXERCISES[currentExercise].repPrimary.defIndex].value;
 
-          if (appState === 'active_set') repDetectionTick(primaryValue);
-          updateNeutralTimer(primaryValue);
+          repDetectionTick(primaryValue);
           maybeLog(pose);
         }
       } else {
@@ -1556,11 +1476,6 @@
             val.classList.add('hidden-val');
           }
         });
-        // Reset neutral timer if tracking
-        if (appState === 'active_set' || appState === 'countdown') {
-          neutralTimerStart = null;
-          if (appState === 'countdown') cancelCountdown();
-        }
       }
 
       frameCount++;
